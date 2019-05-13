@@ -1,0 +1,286 @@
+//package game
+//
+//import (
+//	. "io-engine-backend/src/shared"
+//	"io-engine-backend/src/math"
+//	"github.com/goburrow/dynamic"
+//	math2 "math"
+//)
+//
+//type CollisionSystem struct {
+//	positionComponents  Storage
+//	collisionComponents Storage
+//}
+//
+//func (self *CollisionSystem) Init() {
+//	dynamic.Register("PositionComponent", func() interface{} {
+//		return &PositionComponent{}
+//	})
+//
+//	dynamic.Register("CollisionComponent", func() interface{} {
+//		return &CollisionComponent{}
+//	})
+//
+//	self.positionComponents = NewStorage()
+//	self.collisionComponents = NewStorage()
+//}
+//
+//func (self *CollisionSystem) RequiredComponentTypes() []ComponentType {
+//	return []ComponentType{PositionComponentType, CollisionComponentType}
+//}
+//
+//func (self *CollisionSystem) AddToStorage(entity Entity) {
+//	for k := range entity.Components {
+//		component := entity.Components[k].(Component)
+//
+//		if component.Id() == int(PositionComponentType) {
+//			self.positionComponents.Components[entity.Id] = &component
+//		} else if component.Id() == int(CollisionComponentType) {
+//			self.collisionComponents.Components[entity.Id] = &component
+//		}
+//	}
+//}
+//
+//func (self *CollisionSystem) UpdateSystem(delta float64, world *World) {
+//
+//	for entity, _ := range self.collisionComponents.Components {
+//		collider := (*self.collisionComponents.Components[entity]).(*CollisionComponent)
+//		collider.Reset()
+//	}
+//
+//	for entity, _ := range self.collisionComponents.Components {
+//		position := (*self.positionComponents.Components[entity]).(*PositionComponent)
+//		collider := (*self.collisionComponents.Components[entity]).(*CollisionComponent)
+//
+//		scaledVelocity := collider.Velocity.Scale(delta)
+//
+//		self.MoveX(scaledVelocity, entity, position, collider)
+//		self.MoveY(scaledVelocity, entity, position, collider)
+//	}
+//}
+//
+//func (self *CollisionSystem) Collides(
+//	min math.VectorInt,
+//	max math.VectorInt,
+//	otherMin math.VectorInt,
+//	otherMax math.VectorInt) bool {
+//	if min.X() <= otherMin.X() ||
+//		min.X() >= otherMax.X() ||
+//		max.Y() <= otherMin.Y() ||
+//		min.Y() >= otherMax.Y() {
+//		return false
+//	}
+//	return true
+//}
+//
+//func (self *CollisionSystem) MoveX(scaledVelocity math.Vector, entityId int64, p *PositionComponent, c *CollisionComponent) {
+//
+//
+//	c.Remainder.Set(c.Remainder.X()+scaledVelocity.X(), c.Remainder.Y());
+//	move := float64(math2.Round(c.Remainder.X()));
+//
+//	for move != 0 {
+//		c.Remainder.Set(c.Remainder.X() - move, c.Remainder.Y());
+//		sign := 0
+//
+//		if move < 0 {
+//			sign = -1
+//		} else {
+//			sign = 1
+//		}
+//
+//		min, max := c.Extents(p.Position)
+//
+//		adjustedMin := min.Add(math.NewVectorInt(sign,0))
+//		adjustedMax := max.Add(math.NewVectorInt(sign,0))
+//
+//		// implement a quad tree.
+//		collides := false
+//		for otherEntityId, _ := range self.collisionComponents.Components {
+//
+//			if otherEntityId != entityId {
+//
+//				otherPosition := (*self.positionComponents.Components[otherEntityId]).(*PositionComponent)
+//				otherCollider := (*self.collisionComponents.Components[otherEntityId]).(*CollisionComponent)
+//
+//				otherMin, otherMax := otherCollider.Extents(otherPosition.Position)
+//
+//				if self.Collides(adjustedMin, adjustedMax, otherMin, otherMax) {
+//
+//					collides = true
+//
+//					if sign > 0 {
+//						c.Right = true
+//						otherCollider.Left = true
+//					} else if sign < 0 {
+//						c.Left = true
+//						otherCollider.Right = true
+//					}
+//
+//					c.AddEntityToCollisionList(otherEntityId)
+//
+//					otherCollider.AddEntityToCollisionList(entityId)
+//
+//				}
+//			}
+//		}
+//
+//		if !collides {
+//			p.Position = p.Position.Add(math.NewVectorInt(sign,0))
+//		}
+//
+//		move = move - float64(sign)
+//	}
+//}
+//
+//func (self *CollisionSystem) MoveY(scaledVelocity math.Vector,entityId int64, p *PositionComponent, c *CollisionComponent) {
+//	c.Remainder.Set(c.Remainder.X(), c.Remainder.Y() + scaledVelocity.Y());
+//
+//	move := float64(math2.Round(c.Remainder.Y()));
+//
+//	for move != 0 {
+//
+//		c.Remainder.Set(c.Remainder.X(), c.Remainder.Y() - move);
+//
+//		sign := 0
+//
+//		if move < 0 {
+//			sign = -1
+//		} else {
+//			sign = 1
+//		}
+//
+//		min, max := c.Extents(p.Position)
+//
+//		adjustedMin := min.Add(math.NewVectorInt(0, sign))
+//		adjustedMax := max.Add(math.NewVectorInt(0, sign))
+//
+//		// implement a quad tree.
+//		collides := false
+//		for otherEntityId, _ := range self.collisionComponents.Components {
+//
+//			if otherEntityId != entityId {
+//
+//				otherPosition := (*self.positionComponents.Components[otherEntityId]).(*PositionComponent)
+//				otherCollider := (*self.collisionComponents.Components[otherEntityId]).(*CollisionComponent)
+//
+//				otherMin, otherMax := otherCollider.Extents(otherPosition.Position)
+//
+//				if self.Collides(adjustedMin, adjustedMax, otherMin, otherMax) {
+//
+//					collides = true
+//
+//					if sign > 0 {
+//						c.Top = true;
+//						otherCollider.Bottom = true
+//					} else if sign < 0 {
+//						c.Bottom = true;
+//						otherCollider.Top = true
+//					}
+//
+//					c.AddEntityToCollisionList(otherEntityId)
+//
+//					otherCollider.AddEntityToCollisionList(entityId)
+//
+//				}
+//			}
+//		}
+//
+//		if !collides {
+//			p.Position = p.Position.Add(math.NewVectorInt(0, sign))
+//		}
+//
+//		move = move - float64(sign)
+//
+//	}
+//}
+//
+//type PositionComponent struct {
+//	Position math.VectorInt
+//}
+//
+//func (self *PositionComponent) Id() int {
+//	return int(PositionComponentType)
+//}
+//
+//func (self *PositionComponent) CreateComponent() {
+//
+//}
+//
+//func (self *PositionComponent) DestroyComponent() {
+//
+//}
+//
+//type CollisionComponent struct {
+//	Size     math.VectorInt `json:"size"`
+//
+//	Velocity math.Vector
+//
+//	Remainder math.Vector
+//
+//	entitiesCollidingWith []int64
+//
+//	Bottom bool
+//	Top    bool
+//	Left   bool
+//	Right  bool
+//
+//	WasBottom bool
+//	WasTop    bool
+//	WasLeft   bool
+//	WasRight  bool
+//}
+//
+//func (c *CollisionComponent) AddEntityToCollisionList(entityId int64) {
+//
+//	contains := false
+//	for _, i := range c.entitiesCollidingWith {
+//		if i == entityId {
+//			contains = true
+//		}
+//	}
+//
+//	if !contains {
+//		c.entitiesCollidingWith = append(c.entitiesCollidingWith, entityId)
+//	}
+//
+//}
+//
+//func (c *CollisionComponent) Max(position math.VectorInt) math.VectorInt {
+//	return math.NewVectorInt(position.X()+c.Size.X()/2.0, position.Y()+c.Size.Y()/2)
+//}
+//
+//func (c *CollisionComponent) Min(position math.VectorInt) math.VectorInt {
+//	return math.NewVectorInt(position.X()-c.Size.X()/2, position.Y()-c.Size.Y()/2)
+//}
+//
+//func (c *CollisionComponent) Id() int {
+//	return int(CollisionComponentType);
+//}
+//
+//func (c *CollisionComponent) CreateComponent() {
+//
+//}
+//
+//func (c *CollisionComponent) DestroyComponent() {
+//
+//}
+//
+//func (c *CollisionComponent) Extents(position math.VectorInt) (math.VectorInt, math.VectorInt) {
+//	return c.Min(position), c.Max(position)
+//}
+//
+//func (c *CollisionComponent) Reset() {
+//	c.WasBottom = c.Bottom
+//	c.WasLeft = c.Left
+//	c.WasRight = c.Right
+//	c.WasTop = c.Top
+//
+//	c.Bottom = false
+//	c.Top = false
+//	c.Left = false
+//	c.Right = false
+//
+//	c.entitiesCollidingWith = nil
+//
+//}
