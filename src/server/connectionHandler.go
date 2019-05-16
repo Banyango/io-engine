@@ -11,6 +11,7 @@ import (
 	"github.com/pion/webrtc"
 	. "io-engine-backend/src/shared"
 	"sync"
+	"time"
 )
 
 
@@ -22,8 +23,8 @@ Network Server Global
 
 type ServerGlobal struct {
 	BufferedChanges []EntityChange
-	NetworkChanges []EntityChange
-	mux            sync.Mutex
+	CurrentChanges  []EntityChange
+	mux             sync.Mutex
 }
 
 type EntityChange struct {
@@ -32,6 +33,12 @@ type EntityChange struct {
 	PrefabId        byte
 	Type            EntityChangeType
 	Buffer          bool
+}
+
+type WorldStatePacket struct {
+	NetworkId uint16
+	PositionX uint32
+	PositionY uint32
 }
 
 func (self *ServerGlobal) Id() int {
@@ -53,7 +60,7 @@ func (self *ServerGlobal) NetworkDestroy(networkId uint16, prefabId byte, networ
 func (self *ServerGlobal) CreateChange(networkId uint16, prefabId byte, networkPrefab byte, buffer bool, changeType EntityChangeType) EntityChange {
 	change := EntityChange{NetworkId: networkId, PrefabId: prefabId, NetworkPrefabId: networkPrefab, Type:changeType , Buffer: buffer}
 
-	self.NetworkChanges = append(self.NetworkChanges, change)
+	self.CurrentChanges = append(self.CurrentChanges, change)
 
 	if buffer {
 		self.BufferedChanges = append(self.BufferedChanges, change)
@@ -67,7 +74,7 @@ func (self *ServerGlobal) CreateGlobal(world *World) {
 }
 
 func (self *ServerGlobal) Clear() {
-	self.NetworkChanges = self.NetworkChanges[:0]
+	self.CurrentChanges = self.CurrentChanges[:0]
 }
 
 /*
@@ -106,24 +113,56 @@ func (*ConnectionHandlerSystem) RequiredComponentTypes() []ComponentType {
 
 func (self *ConnectionHandlerSystem) UpdateSystem(delta float64, world *World) {
 
-	//global := world.Globals[ServerGlobalType].(*ServerGlobal)
-	//
-	//// build the network packet.
-	//
-	//networkPacket := BufferedEntityPacket{
-	//	Time:    time.Now().Unix(),
-	//	Updates: global.NetworkChanges,
-	//}
-	//
-	//var buf bytes.Buffer
-	//enc := gob.NewEncoder(&buf)
-	//
-	//if err := enc.Encode(networkPacket); err != nil {
-	//	fmt.Printf("Encoding Failed")
-	//	return
-	//}
-	//
-	//global.Clear()
+	global := world.Globals[ServerGlobalType].(*ServerGlobal)
+
+	var bytesToWrite []byte
+
+	if len(global.CurrentChanges) > 0 {
+
+		// build the network packet.
+		networkPacket := BufferedEntityPacket{
+			Time:    time.Now().Unix(),
+			Updates: global.CurrentChanges,
+		}
+
+		var buf bytes.Buffer
+		enc := gob.NewEncoder(&buf)
+
+		if err := enc.Encode(networkPacket); err != nil {
+			fmt.Printf("Encoding Failed")
+			return
+		}
+
+		bytesToWrite = buf.Bytes()
+
+	}
+
+	for entity, _ := range self.Connections.Components {
+		net := (*self.Connections.Components[entity]).(*NetworkConnectionComponent)
+		net.WSConnHandler.Handle()
+
+		// only send data changes if the webrtc connection is open.
+		if net.IsDataChannelOpen {
+			if len(bytesToWrite) > 0 {
+				net.WSConnHandler.Write(bytesToWrite)
+			}
+
+			// handle webrtc messages
+			select {
+			case message, ok := <-net.UdpIn:
+				if ok {
+					print(message)
+				}
+			default:
+			}
+
+			// send webrtc messages
+			//net.DataChannel.Send()
+		}
+
+	}
+
+	global.Clear()
 }
 
 /*
@@ -147,7 +186,6 @@ type ServerConnectionHandshakePacket struct {
 	PlayerId uint16
 	// remove this
 	BufferedChanges []EntityChange
-	Offer webrtc.SessionDescription
 }
 
 type EntityChangeType byte
@@ -161,12 +199,17 @@ const (
 type NetworkConnectionComponent struct {
 	PlayerId uint16
 	// websocket handler.
-	connHandler socker.SockerClientConnection
+	WSConnHandler *socker.SockerClientConnection
+
+	// WebRTC channel
+	UdpIn chan []byte
 
 	// Udp - unreliable
-	PeerConnection *webrtc.PeerConnection
-	DataChannel    *webrtc.DataChannel
-	Offer          webrtc.SessionDescription
+	PeerConnection    *webrtc.PeerConnection
+	DataChannel       *webrtc.DataChannel
+	Offer             webrtc.SessionDescription
+	AnswerSent        bool
+	IsDataChannelOpen bool
 
 }
 
@@ -182,8 +225,110 @@ func (*NetworkConnectionComponent) DestroyComponent() {
 
 }
 
+func (self *NetworkConnectionComponent) ConnectToDataChannel(data []byte) {
 
-func (self *NetworkConnectionComponent) Handshake(playerId uint16, buffer []EntityChange) {
+	self.UdpIn = make(chan []byte)
+
+	fmt.Println("Configuring ICE server")
+	config := webrtc.Configuration {
+		ICEServers: []webrtc.ICEServer {
+			{
+				URLs: []string{"stun:stun.l.google.com:19302"},
+			},
+		},
+	}
+
+	fmt.Println("Created Peer Connection")
+	peerConnection, err := webrtc.NewPeerConnection(config)
+	if err != nil {
+		panic(err)
+	}
+
+	// Set the handler for ICE connection state
+	// This will notify you when the peer has connected/disconnected
+	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
+		fmt.Printf("ICE Connection State has changed: %s\n", connectionState.String())
+	})
+
+	peerConnection.OnDataChannel(func(d *webrtc.DataChannel) {
+		fmt.Printf("New DataChannel %s %d\n", d.Label(), d.ID())
+
+		d.OnOpen(func() {
+			self.IsDataChannelOpen = true
+		})
+
+		d.OnMessage(func(msg webrtc.DataChannelMessage) {
+			self.UdpIn <- msg.Data
+		})
+	})
+
+	self.PeerConnection = peerConnection
+}
+
+func (self *NetworkConnectionComponent) HandleSignal(data []byte) {
+
+	var handshake map[string]interface{}
+	err := json.Unmarshal(data, &handshake)
+
+	if err != nil {
+		// close connection
+		// todo handle this better. Unsubscribe the player.
+		fmt.Println("Handshake failed!")
+		panic(err)
+	}
+
+	if val, ok := handshake["offer"]; ok {
+		offer := webrtc.SessionDescription{}
+		Decode(val.(string), &offer)
+
+		err = self.PeerConnection.SetRemoteDescription(offer)
+		if err != nil {
+			panic(err)
+		}
+
+		answer, err := self.PeerConnection.CreateAnswer(nil)
+
+		if err != nil {
+			panic(err)
+		}
+
+		err = self.PeerConnection.SetLocalDescription(answer)
+		if err != nil {
+			panic(err)
+		}
+
+		handshake["answer"] = Encode(answer)
+		marshal, err := json.Marshal(handshake)
+
+		if err != nil {
+			panic(err)
+		}
+
+		self.WSConnHandler.Write(marshal)
+
+	} else if val, ok := handshake["candidate"]; ok {
+		fmt.Println("Adding candidate: ",handshake["candidate"])
+		candidateInit := webrtc.ICECandidateInit{}
+
+		err = json.Unmarshal([]byte(val.(string)), &candidateInit)
+		if err != nil {
+			panic(err)
+		}
+
+		err := self.PeerConnection.AddICECandidate(candidateInit)
+		if err != nil {
+			fmt.Println("Ice candidate error")
+			panic(err)
+		}
+	}
+}
+
+func (self *NetworkConnectionComponent) GameMessage(message []byte) {
+	// this is a TCP message from a running client.
+
+}
+
+func (self *NetworkConnectionComponent) SendBufferedEntites(playerId uint16, buffer []EntityChange) {
 
 	networkPacket := ServerConnectionHandshakePacket{
 		PlayerId: playerId,
@@ -198,87 +343,9 @@ func (self *NetworkConnectionComponent) Handshake(playerId uint16, buffer []Enti
 		return
 	}
 
-	//self.outboundTCPChannel <- buf.Bytes()
+	self.WSConnHandler.Write(buf.Bytes())
+
 }
-
-func (self *NetworkConnectionComponent) ConnectToDataChannel(data []byte) {
-
-	//fmt.Println("Configuring ICE server")
-	//config := webrtc.Configuration {
-	//	ICEServers: []webrtc.ICEServer {
-	//		{
-	//			URLs: []string{"stun:stun.l.google.com:19302"},
-	//		},
-	//	},
-	//}
-	//
-	//fmt.Println("Created Peer Connection")
-	//peerConnection, err := webrtc.NewPeerConnection(config)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//
-	//// Set the handler for ICE connection state
-	//// This will notify you when the peer has connected/disconnected
-	//peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
-	//	fmt.Printf("ICE Connection State has changed: %s\n", connectionState.String())
-	//})
-	//
-	//peerConnection.OnDataChannel(func(d *webrtc.DataChannel) {
-	//	fmt.Printf("New DataChannel %s %d\n", d.Label(), d.ID())
-	//
-	//	// Register channel opening handling
-	//	d.OnOpen(func() {
-	//		fmt.Printf("Data channel '%s'-'%d' open. Random messages will now be sent to any connected DataChannels every 5 seconds\n", d.Label(), d.ID())
-	//	})
-	//
-	//	// Register text message handling
-	//	d.OnMessage(func(msg webrtc.DataChannelMessage) {
-	//		fmt.Printf("Message from DataChannel '%s': '%s'\n", d.Label(), string(msg.Data))
-	//	})
-	//})
-	//
-	//var handshake map[string]string
-	//err = json.Unmarshal(data, handshake)
-	//
-	//if err != nil {
-	//	// close connection
-	//	fmt.Println("Handshake failed!")
-	//	panic(err)
-	//}
-	//
-	//offer := webrtc.SessionDescription{}
-	//Decode(handshake["candidate"], &offer)
-	//
-	//err = peerConnection.SetRemoteDescription(offer)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//
-	//answer, err := peerConnection.CreateAnswer(nil)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//
-	//err = peerConnection.SetLocalDescription(answer)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//
-	//// send to client the answer
-	//
-	//handshake["candidate"] = Encode(answer)
-	//marshal, err := json.Marshal(handshake)
-	//
-	//if err != nil {
-	//	panic(err)
-	//}
-	//
-	//self.outboundTCPChannel <- marshal
-	//
-	//self.PeerConnection = peerConnection
-}
-
 
 // Decode decodes the input from base64
 // It can optionally unzip the input after decoding

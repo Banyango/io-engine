@@ -6,7 +6,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"github.com/pion/webrtc"
+	"github.com/Banyango/socker"
 	"io-engine-backend/src/server"
 	. "io-engine-backend/src/shared"
 	"net/url"
@@ -17,49 +17,45 @@ import (
 
 type ConnectionStateType int
 
-const (
-	ConnectionState_NotConnected ConnectionStateType = iota
-	ConnectionState_WSConnecting
-	ConnectionState_CreatingDataChannel
-	ConnectionState_Connected
-)
-
-type ConnectionState interface {
-	HandleWSMessage(message []byte, system *NetworkedClientSystem) error
-	NextState(system *NetworkedClientSystem)
-}
-
-type PreWebSocketHandshake struct {
-
-}
-
-func (self *PreWebSocketHandshake) HandleWSMessage(message []byte, system *NetworkedClientSystem) error {
-	var packet server.ServerConnectionHandshakePacket
-
-	if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
-		log(fmt.Sprintln("Error in handshake packet!"))
-		return err
-	}
-
-	system.PlayerId = int(packet.PlayerId)
-
-	log(fmt.Sprintln("Creating webrtc channel"))
-	system.SetupWebRTC()
-
-	//create a fake packet with the buffered changes
-	system.Buffered = packet.BufferedChanges
-
-	log(fmt.Sprintln("Player Id", system.PlayerId))
-	log(fmt.Sprintln("Is ConnectionState", system.ConnectionState))
-
-	self.NextState(system)
-
-	return nil
-}
-
-func (*PreWebSocketHandshake) NextState(system *NetworkedClientSystem) {
-	system.ConnectionState = &WaitForDataChannelHandshake{}
-}
+//const (
+//	ConnectionState_NotConnected ConnectionStateType = iota
+//	ConnectionState_WSConnecting
+//	ConnectionState_CreatingDataChannel
+//	ConnectionState_Connected
+//)
+//
+//
+//type PreWebSocketHandshake struct {
+//
+//}
+//
+//func (self *PreWebSocketHandshake) HandleWSMessage(message []byte, system *NetworkedClientSystem) error {
+//	var packet server.ServerConnectionHandshakePacket
+//
+//	if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
+//		log(fmt.Sprintln("Error in handshake packet!"))
+//		return err
+//	}
+//
+//	system.PlayerId = int(packet.PlayerId)
+//
+//	log(fmt.Sprintln("Creating webrtc channel"))
+//	system.SetupWebRTC()
+//
+//	//create a fake packet with the buffered changes
+//	system.Buffered = packet.BufferedChanges
+//
+//	log(fmt.Sprintln("Player Id", system.PlayerId))
+//	log(fmt.Sprintln("Is ConnectionState", system.ConnectionState))
+//
+//	self.NextState(system)
+//
+//	return nil
+//}
+//
+//func (*PreWebSocketHandshake) NextState(system *NetworkedClientSystem) {
+//	system.ConnectionState = &WaitForDataChannelHandshake{}
+//}
 
 type WaitForDataChannelHandshake struct {
 
@@ -95,8 +91,8 @@ func (*Connected) NextState(system *NetworkedClientSystem) {
 }
 
 type NetworkedClientSystem struct {
-	PlayerId        int
-	ConnectionState ConnectionState
+	PlayerId    int
+	ConnHandler *socker.SockerClient
 
 	done chan struct{}
 	data chan server.BufferedEntityPacket
@@ -108,16 +104,74 @@ type NetworkedClientSystem struct {
 	ws       js.Value
 	im       js.Value
 
-	Packets       []server.BufferedEntityPacket
-	Buffered      []server.EntityChange
-	mux           sync.Mutex
-	UDPConnection *webrtc.PeerConnection
+	WebRTCConnection js.Value
+
+	Packets          []server.BufferedEntityPacket
+	Buffered         []server.EntityChange
+	mux              sync.Mutex
 }
 
 
 func (self *NetworkedClientSystem) Init() {
 
-	self.ConnectionState = &PreWebSocketHandshake{}
+	self.ConnHandler = socker.NewClient()
+
+	// handle init handshake
+	self.ConnHandler.Add(func(message []byte) bool {
+
+		log("-- Handling init")
+		var packet server.ServerConnectionHandshakePacket
+
+		if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
+			log(fmt.Sprintln("Error in handshake packet!"))
+		}
+
+		self.PlayerId = int(packet.PlayerId)
+
+		js.Global().Get("console").Call("log", "Creating WebRTC connection...")
+
+		self.SetupWebRTC()
+
+		//create a fake packet with the buffered changes
+		self.Buffered = packet.BufferedChanges
+
+		log(fmt.Sprintln("Player Id", self.PlayerId))
+
+		self.SetupWebRTC()
+
+		return true
+	})
+
+	// handle webrtc answer
+	self.ConnHandler.Add(func(message []byte) bool {
+
+		log("-- Handling answer")
+		var handshake map[string]string
+		err := json.Unmarshal(message, &handshake)
+
+		if err != nil {
+			log("handshake failure ")
+			panic(err)
+		}
+
+		log("-- Setting answer")
+		self.WebRTCConnection.Call("setAnswer", handshake["answer"])
+
+		return true
+	})
+
+	// handle normal TCP packets.
+	self.ConnHandler.Add(func(message []byte) bool {
+		var packet server.BufferedEntityPacket
+
+		if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
+			fmt.Println("Error in Packet",err)
+		}
+
+		self.Packets = append(self.Packets, packet)
+
+		return false
+	})
 
 	go func() {
 		u, err := url.Parse("ws://localhost:8081")
@@ -133,11 +187,21 @@ func (self *NetworkedClientSystem) Init() {
 
 		self.ws = js.Global().Get("WebSocket").New(u.String())
 		self.ws.Set("binaryType", "arraybuffer")
+
 		onopen := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 			js.Global().Get("console").Call("log", "ConnectionState to server!")
+
+			enc := js.Global().Get("TextEncoder").New()
+
+			result := enc.Call("encode", "Give me Entities")
+
+			self.ws.Call("send", result)
+
 			return nil
 		})
+
 		defer onopen.Release()
+
 		onmessage := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 			// Create a buffer and copy it into a wasm referenced slice so we can use it in golang
 			// make sure to release the typed array when done or there's a memory leak.
@@ -147,48 +211,20 @@ func (self *NetworkedClientSystem) Init() {
 			jsBuf := js.TypedArrayOf(message)
 			jsBuf.Call("set", dataJSArray, 0)
 
-			log(fmt.Sprintln("got message", self.PlayerId))
+			err := self.ConnHandler.Handle(message)
 
-			if !self.ConnectionState {
-
-				var packet server.ServerConnectionHandshakePacket
-
-				if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
-					log(fmt.Sprintln("Error in handshake packet!"))
-
-				}
-
-				self.PlayerId = int(packet.PlayerId)
-				self.ConnectionState = true
-
-				log(fmt.Sprintln("Creating webrtc channel"))
-				self.SetupWebRTC()
-
-				//create a fake packet with the buffered changes
-				self.Buffered = packet.BufferedChanges
-
-				log(fmt.Sprintln("Player Id", self.PlayerId))
-				log(fmt.Sprintln("Is ConnectionState", self.ConnectionState))
-
-			} else {
-
-				var packet server.BufferedEntityPacket
-
-				if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
-					fmt.Println("Error in Packet",err)
-					goto cleanup
-				}
-
-				self.Packets = append(self.Packets, packet)
-
+			if err != nil {
+				fmt.Println("Error occurred")
+				jsBuf.Release()
 			}
 
-			cleanup:
-				jsBuf.Release()
+			jsBuf.Release()
 
 			return nil
 		})
+
 		defer onmessage.Release()
+
 		self.ws.Set("onopen", onopen)
 		self.ws.Set("onmessage", onmessage)
 
@@ -197,70 +233,20 @@ func (self *NetworkedClientSystem) Init() {
 }
 
 func (self *NetworkedClientSystem) SetupWebRTC () {
+	log("Creating WebRTCConnection..")
+	webrtcConnectionJs := js.Global().Get("window").Get("WebRTCConnection")
 
-	config := webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{
-				URLs: []string{"stun:stun.l.google.com:19302"},
-			},
-		},
+	if webrtcConnectionJs == js.Undefined() {
+		log("Please include main.js in html page.")
 	}
 
-	pc, err := webrtc.NewPeerConnection(config)
-	if err != nil {
-		handleError(err)
-	}
+	self.WebRTCConnection = webrtcConnectionJs.New(self.ws)
 
-	ordered := false
-	options := &webrtc.DataChannelInit{
-		Ordered:&ordered,
-	}
-	// Create DataChannel.
-	sendChannel, err := pc.CreateDataChannel("data " + string(self.PlayerId), options)
-	if err != nil {
-		handleError(err)
-	}
-	sendChannel.OnClose(func() {
-		fmt.Println("sendChannel has closed")
-	})
-	sendChannel.OnOpen(func() {
-		fmt.Println("sendChannel has opened")
-	})
-	sendChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
-		log(fmt.Sprintf("Message from DataChannel %s payload %s", sendChannel.Label(), string(msg.Data)))
-	})
-
-	// Create offer
-	offer, err := pc.CreateOffer(nil)
-	if err != nil {
-		handleError(err)
-	}
-	if err := pc.SetLocalDescription(offer); err != nil {
-		handleError(err)
-	}
-
-	// Add handlers for setting up the connection.
-	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		log(fmt.Sprint(state))
-	})
-	pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
-		if candidate != nil {
-			encodedDescr := Encode(pc.LocalDescription())
-
-			handshake := map[string]interface{} {
-				"candidate":encodedDescr,
-			}
-
-			result, err := json.Marshal(handshake)
-
-			if err != nil {
-				log("Cant perform handshake")
-				panic(err)
-			}
-
-			self.ws.Call("send", result)
-		}
-	})
+	log("Adding onmessage..")
+	self.WebRTCConnection.Get("sendChannel").Set("onmessage", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		log("got a message!")
+		return nil;
+	}));
 }
 
 // Encode encodes the input in base64
@@ -274,14 +260,27 @@ func Encode(obj interface{}) string {
 	return base64.StdEncoding.EncodeToString(b)
 }
 
+func Decode(in string, obj interface{}) {
+	log("Decoding")
+	b, err := base64.StdEncoding.DecodeString(in)
+	if err != nil {
+		log("base64 error")
+		panic(err)
+	}
 
+	err = json.Unmarshal(b, obj)
+	if err != nil {
+		log("unmarshal error")
+		panic(err)
+	}
+}
 
 func getElementByID(id string) js.Value {
 	return js.Global().Get("document").Call("getElementById", id)
 }
 
 func handleError(err error) {
-	js.Global().Get("console").Call("log","Unexpected error. Check console.")
+	js.Global().Get("console").Call("log",err.Error())
 	panic(err)
 }
 

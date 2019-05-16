@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/Banyango/socker"
 	"github.com/gorilla/websocket"
 	"io-engine-backend/src/game"
 	"io-engine-backend/src/server"
@@ -112,17 +113,39 @@ func (self *Server) createPlayer(conn *websocket.Conn) {
 	entity.Id = self.World.FetchAndIncrementId()
 	self.World.AddEntityToWorld(entity)
 
-	networkConnectionComponent.TcpConnection = conn
+	networkConnectionComponent.WSConnHandler = socker.NewClientConnection(conn)
 	networkConnectionComponent.PlayerId = uint16(entity.Id)
 
-	fmt.Println("Client is connected.. ", entity.Id)
+	fmt.Println("Client given entityId: ", entity.Id)
 	global := self.World.Globals[shared.ServerGlobalType].(*server.ServerGlobal)
-
-	networkConnectionComponent.Handshake(uint16(entity.Id), global.BufferedChanges)
 
 	global.NetworkSpawn(uint16(entity.Id),0, 1, true)
 
-	go networkConnectionComponent.ReadPump()
-	go networkConnectionComponent.WritePump()
+	networkConnectionComponent.WSConnHandler.Add(func(message []byte) bool {
+		fmt.Println("Sending Buffered Entities to -> entity ", entity.Id)
+		networkConnectionComponent.SendBufferedEntites(uint16(entity.Id), global.BufferedChanges)
+		return true
+	})
 
+	// setup webrtc connection send offer
+	networkConnectionComponent.WSConnHandler.Add(func(message []byte) bool {
+		fmt.Println("Setting up webrtc data channel -> entity ", entity.Id)
+		networkConnectionComponent.ConnectToDataChannel(message)
+		return true
+	})
+
+	networkConnectionComponent.WSConnHandler.Add(func(message []byte) bool {
+		fmt.Println("Handling messages -> entity", entity.Id)
+		networkConnectionComponent.HandleSignal(message)
+		return networkConnectionComponent.IsDataChannelOpen
+	})
+
+	networkConnectionComponent.WSConnHandler.Add(func(message []byte) bool {
+		networkConnectionComponent.GameMessage(message)
+		return false
+	})
+
+	go networkConnectionComponent.WSConnHandler.ReadPump()
+	go networkConnectionComponent.WSConnHandler.WritePump()
 }
+
