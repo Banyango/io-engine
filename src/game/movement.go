@@ -102,5 +102,10 @@ func (self *ArcadeMovementComponent) DestroyComponent() {
 }
 
 func (self *ArcadeMovementComponent) Clone() Component {
-	return new(ArcadeMovementComponent)
+	component := new(ArcadeMovementComponent)
+	component.Speed = self.Speed
+	component.Gravity = self.Gravity
+	component.MaxSpeed = self.MaxSpeed
+	component.Drag = self.Drag
+	return component
 }

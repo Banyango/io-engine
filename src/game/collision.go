@@ -144,7 +144,9 @@ func (self *PositionComponent) DestroyComponent() {
 }
 
 func (self *PositionComponent) Clone() Component {
-	return new(PositionComponent)
+	component := new(PositionComponent)
+	component.Position = self.Position
+	return component
 }
 
 type CollisionComponent struct {
@@ -170,7 +172,10 @@ type CollisionComponent struct {
 }
 
 func (c *CollisionComponent) Clone() Component {
-	return new(CollisionComponent)
+	component := new(CollisionComponent)
+	component.Size = c.Size
+	component.Velocity = c.Velocity
+	return component
 }
 
 func (c *CollisionComponent) AddEntityToCollisionList(entityId int64) {

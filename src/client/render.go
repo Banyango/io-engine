@@ -127,7 +127,11 @@ func (self *CircleRendererComponent) DestroyComponent() {
 }
 
 func (self *CircleRendererComponent) Clone() Component {
-	return new(CircleRendererComponent)
+	component := new(CircleRendererComponent)
+	component.Size = self.Size
+	component.Color = self.Color
+	component.Radius = self.Radius
+	return component
 }
 
 
