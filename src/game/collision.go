@@ -143,6 +143,10 @@ func (self *PositionComponent) DestroyComponent() {
 
 }
 
+func (self *PositionComponent) Clone() Component {
+	return new(PositionComponent)
+}
+
 type CollisionComponent struct {
 	Size     math.VectorInt `json:"size"`
 
@@ -163,6 +167,10 @@ type CollisionComponent struct {
 	WasTop    bool
 	WasLeft   bool
 	WasRight  bool
+}
+
+func (c *CollisionComponent) Clone() Component {
+	return new(CollisionComponent)
 }
 
 func (c *CollisionComponent) AddEntityToCollisionList(entityId int64) {
@@ -199,6 +207,7 @@ func (c *CollisionComponent) CreateComponent() {
 func (c *CollisionComponent) DestroyComponent() {
 
 }
+
 
 func (c *CollisionComponent) Extents(position math.VectorInt) (math.VectorInt, math.VectorInt) {
 	return c.Min(position), c.Max(position)

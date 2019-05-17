@@ -100,3 +100,7 @@ func (self *ArcadeMovementComponent) CreateComponent() {
 func (self *ArcadeMovementComponent) DestroyComponent() {
 
 }
+
+func (self *ArcadeMovementComponent) Clone() Component {
+	return new(ArcadeMovementComponent)
+}

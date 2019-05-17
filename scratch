@@ -1,0 +1,8 @@
+NetworkServerSystem                    NetworkClientSystem
+- reads/writes to ws/webrtc            - reads/writes to ws/webrtc
+
+
+NetworkDataSystem
+- collects all data that needs
+to be sent to the client
+

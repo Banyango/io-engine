@@ -28,8 +28,10 @@ func main() {
 	input := new(game.InputSystem)
 	collision := new(game.CollisionSystem)
 	movement := new(game.KeyboardMovementSystem)
+	playerState := new(game.PlayerStateSystem)
 	networkServer := new(server.ConnectionHandlerSystem)
 
+	w.AddSystem(playerState)
 	w.AddSystem(input)
 	w.AddSystem(collision)
 	w.AddSystem(movement)
@@ -57,7 +59,6 @@ func main() {
 		log.Fatal(err)
 	}
 }
-
 
 type Server struct {
 	World *shared.World
@@ -93,11 +94,11 @@ func (self *Server) ws(writer http.ResponseWriter, request *http.Request)  {
 		return
 	}
 
-	self.createPlayer(conn)
+	self.createClientConnection(conn)
 
 }
 
-func (self *Server) createPlayer(conn *websocket.Conn) {
+func (self *Server) createClientConnection(conn *websocket.Conn) {
 
 	entity, err := self.World.PrefabData.CreatePrefab(0)
 
@@ -107,35 +108,33 @@ func (self *Server) createPlayer(conn *websocket.Conn) {
 	}
 
 	networkConnectionComponent := new(server.NetworkConnectionComponent)
-
 	entity.Components[int(shared.NetworkConnectionComponentType)] = networkConnectionComponent
 
 	entity.Id = self.World.FetchAndIncrementId()
 	self.World.AddEntityToWorld(entity)
 
-	networkConnectionComponent.WSConnHandler = socker.NewClientConnection(conn)
-	networkConnectionComponent.PlayerId = uint16(entity.Id)
-
-	fmt.Println("Client given entityId: ", entity.Id)
 	global := self.World.Globals[shared.ServerGlobalType].(*server.ServerGlobal)
 
-	global.NetworkSpawn(uint16(entity.Id),0, 1, true)
+	networkConnectionComponent.WSConnHandler = socker.NewClientConnection(conn)
+	networkConnectionComponent.PlayerId = global.FetchAndIncrementPlayerId()
+
+	fmt.Println("Client entityId: ", entity.Id, " Given playerId: ", networkConnectionComponent.PlayerId)
 
 	networkConnectionComponent.WSConnHandler.Add(func(message []byte) bool {
-		fmt.Println("Sending Buffered Entities to -> entity ", entity.Id)
-		networkConnectionComponent.SendBufferedEntites(uint16(entity.Id), global.BufferedChanges)
+		fmt.Println("Sending Buffered Entities to -> player ", networkConnectionComponent.PlayerId)
+		networkConnectionComponent.SendBufferedEntites(global.BufferedEntityChanges)
 		return true
 	})
 
 	// setup webrtc connection send offer
 	networkConnectionComponent.WSConnHandler.Add(func(message []byte) bool {
-		fmt.Println("Setting up webrtc data channel -> entity ", entity.Id)
+		fmt.Println("Setting up webrtc data channel -> player ", networkConnectionComponent.PlayerId)
 		networkConnectionComponent.ConnectToDataChannel(message)
 		return true
 	})
 
 	networkConnectionComponent.WSConnHandler.Add(func(message []byte) bool {
-		fmt.Println("Handling messages -> entity", entity.Id)
+		fmt.Println("Handling messages -> player", networkConnectionComponent.PlayerId)
 		networkConnectionComponent.HandleSignal(message)
 		return networkConnectionComponent.IsDataChannelOpen
 	})
@@ -147,5 +146,6 @@ func (self *Server) createPlayer(conn *websocket.Conn) {
 
 	go networkConnectionComponent.WSConnHandler.ReadPump()
 	go networkConnectionComponent.WSConnHandler.WritePump()
+
 }
 

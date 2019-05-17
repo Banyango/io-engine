@@ -1,6 +1,7 @@
-package server
+package game
 
 import (
+	"io-engine-backend/src/server"
 	. "io-engine-backend/src/shared"
 )
 
@@ -26,27 +27,26 @@ func (self *NetworkDataCollectionSystem) AddToStorage(entity Entity) {
 }
 
 func (*NetworkDataCollectionSystem) RequiredComponentTypes() []ComponentType {
-	return []ComponentType{PositionComponentType, CollisionComponentType}
+	return []ComponentType{PositionComponentType/*, CollisionComponentType*/}
 }
 
 func (self *NetworkDataCollectionSystem) UpdateSystem(delta float64, world *World) {
-	//networkGlobal := world.Globals[ServerGlobalType].(*ServerGlobal)
-	//
-	//for entity, _ := range self.positionComponents.Components {
-	//	position := (*self.positionComponents.Components[entity]).(*game.PositionComponent)
-	//	collider := (*self.collisionComponents.Components[entity]).(*game.CollisionComponent)
-	//
-	//	networkGlobal.NetworkSendUDP(
-	//		NetworkData{
-	//			Position:[]int{position.Position.X(),position.Position.Y()},
-	//			Velocity:[]float32{float32(collider.Velocity.X()), float32(collider.Velocity.Y())},
-	//	})
-	//}
+	networkGlobal := world.Globals[ServerGlobalType].(*server.ServerGlobal)
 
+	for entity, _ := range self.positionComponents.Components {
+		position := (*self.positionComponents.Components[entity]).(*PositionComponent)
+		collider := (*self.collisionComponents.Components[entity]).(*CollisionComponent)
+
+		networkGlobal.NetworkSendUDP(
+			server.NetworkData{
+				Position:[]int{position.Position.X(),position.Position.Y()},
+				Velocity:[]float32{float32(collider.Velocity.X()), float32(collider.Velocity.Y())},
+		})
+	}
 }
 
 type NetworkDataComponent struct {
-	Data NetworkData
+	Data server.NetworkData
 }
 
 func (*NetworkDataComponent) Id() int {
@@ -57,13 +57,12 @@ func (self *NetworkDataComponent) CreateComponent() {
 
 }
 
-func (*NetworkDataComponent) DestroyComponent() {
-
+func (self *NetworkDataComponent) Clone() Component {
+	return new(NetworkDataComponent)
 }
 
-type NetworkData struct {
-	Position []int
-	Velocity []float32
+func (*NetworkDataComponent) DestroyComponent() {
+
 }
 
 /*

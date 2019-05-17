@@ -21,7 +21,18 @@ type GameDataJson struct {
 func (self *PrefabData) CreatePrefab(id int) (Entity, error) {
 
 	if val, ok := self.Prefabs[id]; ok {
-		return val.Clone(), nil
+
+		clone := Entity{}
+
+		clone.Id = val.Id;
+
+		clone.Components = make(map[int]Component)
+
+		for _, comp := range val.Components {
+			clone.Components[comp.Id()] = comp.Clone().(Component)
+		}
+
+		return clone, nil
 	}
 
 	return Entity{}, errors.New("Prefab Doesn't exist")

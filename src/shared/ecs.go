@@ -13,6 +13,7 @@ type Component interface {
 	Id() int
 	CreateComponent()
 	DestroyComponent()
+	Clone() Component
 }
 
 type Global interface {

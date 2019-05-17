@@ -32,6 +32,7 @@ func main() {
 	collision := new(game.CollisionSystem)
 	movement := new(game.KeyboardMovementSystem)
 	netClient := new(client.NetworkedClientSystem)
+	//clientData := new(client.ClientNetworkDataSystem)
 
 	renderer := new(client.CanvasRenderSystem)
 
@@ -40,6 +41,7 @@ func main() {
 	w.AddSystem(collision)
 	w.AddSystem(movement)
 	w.AddSystem(netClient)
+	//w.AddSystem(clientData)
 
 	w.AddRenderer(renderer)
 

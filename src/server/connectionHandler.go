@@ -14,7 +14,6 @@ import (
 	"time"
 )
 
-
 /*
 ----------------------------------------------------------------------------------------------------------------
 Network Server Global
@@ -22,12 +21,15 @@ Network Server Global
 */
 
 type ServerGlobal struct {
-	BufferedChanges []EntityChange
-	CurrentChanges  []EntityChange
-	mux             sync.Mutex
+	BufferedEntityChanges []EntityChange
+	CurrentEntityChanges  []EntityChange
+	CurrentState          WorldStatePacket
+	mux                   sync.Mutex
+	PlayerIndex           uint16
 }
 
 type EntityChange struct {
+	OwnerId         uint16
 	NetworkId       uint16
 	NetworkPrefabId byte
 	PrefabId        byte
@@ -35,38 +37,49 @@ type EntityChange struct {
 	Buffer          bool
 }
 
-type WorldStatePacket struct {
+type NetworkData struct {
+	OwnerId   uint16
 	NetworkId uint16
-	PositionX uint32
-	PositionY uint32
+	Position  []int
+	Velocity  []float32
+}
+
+type WorldStatePacket struct {
+	Updates []NetworkData
 }
 
 func (self *ServerGlobal) Id() int {
 	return ServerGlobalType
 }
 
-func (self *ServerGlobal) NetworkSpawn(networkId uint16, prefabId byte, networkPrefab byte, buffer bool) {
+func (self *ServerGlobal) NetworkSpawn(ownerId uint16, networkId uint16, prefabId byte, networkPrefab byte, buffer bool) {
 	self.mux.Lock()
-	self.CreateChange(networkId,prefabId,networkPrefab,buffer, InstantiatedEntityChangeType)
+	self.CreateChange(ownerId, networkId, prefabId, networkPrefab, buffer, InstantiatedEntityChangeType)
 	self.mux.Unlock()
 }
 
-func (self *ServerGlobal) NetworkDestroy(networkId uint16, prefabId byte, networkPrefab byte, buffer bool) {
+func (self *ServerGlobal) NetworkDestroy(ownerId uint16, networkId uint16, prefabId byte, networkPrefab byte, buffer bool) {
 	self.mux.Lock()
-	self.CreateChange(networkId,prefabId,networkPrefab,buffer, DestroyedEntityChangeType)
+	self.CreateChange(ownerId, networkId, prefabId, networkPrefab, buffer, DestroyedEntityChangeType)
 	self.mux.Unlock()
 }
 
-func (self *ServerGlobal) CreateChange(networkId uint16, prefabId byte, networkPrefab byte, buffer bool, changeType EntityChangeType) EntityChange {
-	change := EntityChange{NetworkId: networkId, PrefabId: prefabId, NetworkPrefabId: networkPrefab, Type:changeType , Buffer: buffer}
+func (self *ServerGlobal) CreateChange(ownerId uint16, networkId uint16, prefabId byte, networkPrefab byte, buffer bool, changeType EntityChangeType) EntityChange {
+	change := EntityChange{OwnerId:ownerId, NetworkId: networkId, PrefabId: prefabId, NetworkPrefabId: networkPrefab, Type: changeType, Buffer: buffer}
 
-	self.CurrentChanges = append(self.CurrentChanges, change)
+	self.CurrentEntityChanges = append(self.CurrentEntityChanges, change)
 
 	if buffer {
-		self.BufferedChanges = append(self.BufferedChanges, change)
+		self.BufferedEntityChanges = append(self.BufferedEntityChanges, change)
 	}
 
 	return change
+}
+
+func (self *ServerGlobal) NetworkSendUDP(data NetworkData) {
+	self.mux.Lock()
+	self.CurrentState.Updates = append(self.CurrentState.Updates, data)
+	self.mux.Unlock()
 }
 
 func (self *ServerGlobal) CreateGlobal(world *World) {
@@ -74,7 +87,19 @@ func (self *ServerGlobal) CreateGlobal(world *World) {
 }
 
 func (self *ServerGlobal) Clear() {
-	self.CurrentChanges = self.CurrentChanges[:0]
+	self.CurrentEntityChanges = self.CurrentEntityChanges[:0]
+}
+
+func (self *ServerGlobal) FetchAndIncrementPlayerId() uint16 {
+	self.mux.Lock()
+
+	temp := self.PlayerIndex
+
+	self.PlayerIndex++
+
+	self.mux.Unlock()
+	return temp
+
 }
 
 /*
@@ -117,12 +142,12 @@ func (self *ConnectionHandlerSystem) UpdateSystem(delta float64, world *World) {
 
 	var bytesToWrite []byte
 
-	if len(global.CurrentChanges) > 0 {
+	if len(global.CurrentEntityChanges) > 0 {
 
 		// build the network packet.
 		networkPacket := BufferedEntityPacket{
 			Time:    time.Now().Unix(),
-			Updates: global.CurrentChanges,
+			Updates: global.CurrentEntityChanges,
 		}
 
 		var buf bytes.Buffer
@@ -196,6 +221,12 @@ const (
 	StateUpdatedEntityChangeType
 )
 
+/*
+----------------------------------------------------------------------------------------------------------------
+	Network Connection Component - Handles the Websocket and WebRTC connections.
+----------------------------------------------------------------------------------------------------------------
+*/
+
 type NetworkConnectionComponent struct {
 	PlayerId uint16
 	// websocket handler.
@@ -210,7 +241,6 @@ type NetworkConnectionComponent struct {
 	Offer             webrtc.SessionDescription
 	AnswerSent        bool
 	IsDataChannelOpen bool
-
 }
 
 func (*NetworkConnectionComponent) Id() int {
@@ -225,13 +255,17 @@ func (*NetworkConnectionComponent) DestroyComponent() {
 
 }
 
+func (self *NetworkConnectionComponent) Clone() Component {
+	return new(NetworkConnectionComponent)
+}
+
 func (self *NetworkConnectionComponent) ConnectToDataChannel(data []byte) {
 
 	self.UdpIn = make(chan []byte)
 
 	fmt.Println("Configuring ICE server")
-	config := webrtc.Configuration {
-		ICEServers: []webrtc.ICEServer {
+	config := webrtc.Configuration{
+		ICEServers: []webrtc.ICEServer{
 			{
 				URLs: []string{"stun:stun.l.google.com:19302"},
 			},
@@ -307,7 +341,7 @@ func (self *NetworkConnectionComponent) HandleSignal(data []byte) {
 		self.WSConnHandler.Write(marshal)
 
 	} else if val, ok := handshake["candidate"]; ok {
-		fmt.Println("Adding candidate: ",handshake["candidate"])
+		fmt.Println("Adding candidate: ", handshake["candidate"])
 		candidateInit := webrtc.ICECandidateInit{}
 
 		err = json.Unmarshal([]byte(val.(string)), &candidateInit)
@@ -328,11 +362,11 @@ func (self *NetworkConnectionComponent) GameMessage(message []byte) {
 
 }
 
-func (self *NetworkConnectionComponent) SendBufferedEntites(playerId uint16, buffer []EntityChange) {
+func (self *NetworkConnectionComponent) SendBufferedEntites(buffer []EntityChange) {
 
 	networkPacket := ServerConnectionHandshakePacket{
-		PlayerId: playerId,
-		BufferedChanges:buffer,
+		PlayerId:        self.PlayerId,
+		BufferedChanges: buffer,
 	}
 
 	var buf bytes.Buffer

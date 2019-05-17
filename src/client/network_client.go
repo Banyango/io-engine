@@ -17,79 +17,6 @@ import (
 
 type ConnectionStateType int
 
-//const (
-//	ConnectionState_NotConnected ConnectionStateType = iota
-//	ConnectionState_WSConnecting
-//	ConnectionState_CreatingDataChannel
-//	ConnectionState_Connected
-//)
-//
-//
-//type PreWebSocketHandshake struct {
-//
-//}
-//
-//func (self *PreWebSocketHandshake) HandleWSMessage(message []byte, system *NetworkedClientSystem) error {
-//	var packet server.ServerConnectionHandshakePacket
-//
-//	if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
-//		log(fmt.Sprintln("Error in handshake packet!"))
-//		return err
-//	}
-//
-//	system.PlayerId = int(packet.PlayerId)
-//
-//	log(fmt.Sprintln("Creating webrtc channel"))
-//	system.SetupWebRTC()
-//
-//	//create a fake packet with the buffered changes
-//	system.Buffered = packet.BufferedChanges
-//
-//	log(fmt.Sprintln("Player Id", system.PlayerId))
-//	log(fmt.Sprintln("Is ConnectionState", system.ConnectionState))
-//
-//	self.NextState(system)
-//
-//	return nil
-//}
-//
-//func (*PreWebSocketHandshake) NextState(system *NetworkedClientSystem) {
-//	system.ConnectionState = &WaitForDataChannelHandshake{}
-//}
-
-type WaitForDataChannelHandshake struct {
-
-}
-
-func (*WaitForDataChannelHandshake) HandleWSMessage(message []byte, system *NetworkedClientSystem) error {
-
-	var packet map[string]string
-
-	if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
-		log(fmt.Sprintln("Error in handshake packet!"))
-		return err
-	}
-
-
-	return nil
-}
-
-func (*WaitForDataChannelHandshake) NextState(system *NetworkedClientSystem){
-
-}
-
-type Connected struct {
-
-}
-
-func (*Connected) HandleWSMessage(message []byte, system *NetworkedClientSystem) error {
-	return nil
-}
-
-func (*Connected) NextState(system *NetworkedClientSystem) {
-
-}
-
 type NetworkedClientSystem struct {
 	PlayerId    int
 	ConnHandler *socker.SockerClient
@@ -108,6 +35,7 @@ type NetworkedClientSystem struct {
 
 	Packets          []server.BufferedEntityPacket
 	Buffered         []server.EntityChange
+	State			 server.WorldStatePacket
 	mux              sync.Mutex
 }
 
@@ -244,7 +172,7 @@ func (self *NetworkedClientSystem) SetupWebRTC () {
 
 	log("Adding onmessage..")
 	self.WebRTCConnection.Get("sendChannel").Set("onmessage", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		log("got a message!")
+
 		return nil;
 	}));
 }
@@ -353,7 +281,7 @@ func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
 
 func (self *NetworkedClientSystem) GetPrefabId(change server.EntityChange) int {
 	prefabIdToCreate := int(change.PrefabId)
-	if uint16(self.PlayerId) != change.NetworkId {
+	if uint16(self.PlayerId) != change.OwnerId {
 		prefabIdToCreate = int(change.NetworkPrefabId)
 	}
 	return prefabIdToCreate

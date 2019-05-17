@@ -8,8 +8,14 @@
     {"Type":"ServerGlobal"}
   ],
   "prefabs": {
-    "Player_owned" : {
+    "ConnectedClient" : {
       "id": "0",
+      "components":[
+        {"Type": "PlayerStateComponent"}
+      ]
+    },
+    "Player_owned" : {
+      "id": "1",
       "components":[
         {"Type":"PositionComponent", "Position":[0,0] },
         {"Type":"CollisionComponent", "Size":[2,2], "Velocity":[0,0] },
@@ -18,7 +24,7 @@
       ]
     },
     "Player_peer" : {
-      "id": "1",
+      "id": "2",
       "components":[
         {"Type":"PositionComponent", "Position":[0,0] },
         {"Type":"CircleRendererComponent", "Size":[6,6], "Radius":12.3, "Color":"#001121" }

@@ -126,6 +126,9 @@ func (self *CircleRendererComponent) DestroyComponent() {
 
 }
 
+func (self *CircleRendererComponent) Clone() Component {
+	return new(CircleRendererComponent)
+}
 
 
 
