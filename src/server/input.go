@@ -1,147 +1,119 @@
 package server
-//
-//import (
-//	"github.com/goburrow/dynamic"
-//	"io-engine-backend/src/game"
-//	"io-engine-backend/src/math"
-//	. "io-engine-backend/src/shared"
-//	"syscall/js"
-//)
-//
-//type InputSystem struct {
-//
-//}
-//
-//func (self *InputSystem) Init() {
-//	dynamic.Register("InputGlobal", func() interface{} {
-//		return &game.InputGlobal{}
-//	})
-//}
-//
-//func (self *InputSystem) RequiredComponentTypes() []ComponentType {
-//	return []ComponentType{RawInputGlobalType, InputGlobalType}
-//}
-//
-//func (self *InputSystem) AddToStorage(entity Entity) {
-//
-//}
-//
-//func (self *InputSystem) UpdateSystem(delta float64, world *World) {
-//	rawInput := world.Globals[RawInputGlobalType].(*RawInputGlobal)
-//	input := world.Globals[InputGlobalType].(*game.InputGlobal)
-//
-//	Copy(input, *rawInput)
-//
-//	rawInput.Reset();
-//}
-//
-//func Copy(inp *game.InputGlobal, raw RawInputGlobal) {
-//	inp.KeyUp = raw.keyUp
-//	inp.KeyPressed = raw.keyPressed
-//	inp.KeyDown = raw.keyDown
-//	inp.MousePosition = raw.mousePosition
-//	inp.MouseDown = raw.mouseDown
-//	inp.MouseUp = raw.mouseUp
-//	inp.MousePressed = raw.mousePressed
-//}
-//
-//type RawInputGlobal struct {
-//
-//	keyDown map[game.KeyCode]bool
-//	keyPressed map[game.KeyCode]bool
-//	keyUp map[game.KeyCode]bool
-//
-//	mousePosition math.Vector
-//
-//	mouseDown map[int]bool
-//	mousePressed map[int]bool
-//	mouseUp map[int]bool
-//
-//	keyDownFunc js.Func
-//	keyPressedFunc js.Func
-//	keyUpFunc js.Func
-//
-//	mouseMoveFunc js.Func
-//	mouseDownFunc js.Func
-//	mouseUpFunc js.Func
-//}
-//
-//func (self *RawInputGlobal) Id() int {
-//	return int(RawInputGlobalType)
-//}
-//
-//func (self *RawInputGlobal) CreateGlobal() {
-//
-//	self.keyUp = map[game.KeyCode]bool{}
-//	self.keyDown = map[game.KeyCode]bool{}
-//	self.keyPressed = map[game.KeyCode]bool{}
-//	self.mouseDown = map[int]bool{}
-//	self.mousePressed = map[int]bool{}
-//	self.mouseUp = map[int]bool{}
-//	self.mousePosition = math.VectorZero()
-//
-//	go func() {
-//		doc := js.Global().Get("document")
-//
-//		if doc.Truthy() {
-//			done := make(chan struct{}, 0)
-//
-//			self.mouseMoveFunc = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-//				e := args[0]
-//				self.mousePosition.Set(e.Get("clientX").Float(), e.Get("clientY").Float())
-//				return nil;
-//			})
-//			defer self.mouseMoveFunc.Release()
-//
-//			self.keyDownFunc = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-//				e := args[0]
-//
-//				//fmt.Println("key down:", e.Get("keyCode"))
-//
-//				keyCode, err := game.KeyFromString(e.Get("keyCode").String())
-//
-//				if err == nil {
-//					self.keyDown[keyCode] = true
-//					self.keyPressed[keyCode] = true
-//				}
-//
-//				return nil;
-//			})
-//
-//			defer self.keyDownFunc.Release()
-//
-//			defer self.keyPressedFunc.Release()
-//
-//			self.keyUpFunc = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-//				e := args[0]
-//
-//				//fmt.Println("key up:", e.Get("keyCode"))
-//
-//				keyCode, err := game.KeyFromString(e.Get("keyCode").String())
-//
-//				if err == nil {
-//					self.keyPressed[keyCode] = false
-//					self.keyUp[keyCode] = true
-//				}
-//
-//				return nil;
-//			})
-//
-//			defer self.keyUpFunc.Release()
-//
-//			doc.Call("addEventListener", "mousemove", self.mouseMoveFunc)
-//			doc.Call("addEventListener", "keydown", self.keyDownFunc)
-//			doc.Call("addEventListener", "keyup", self.keyUpFunc)
-//
-//			<-done
-//		}
-//	}()
-//}
-//
-//func (self *RawInputGlobal) Reset() {
-//	self.mousePressed = nil
-//	self.mouseDown = nil
-//	self.keyDown = map[game.KeyCode]bool{}
-//	self.keyUp = map[game.KeyCode]bool{}
-//}
-//
+
+import (
+	"encoding/json"
+	"fmt"
+	"github.com/goburrow/dynamic"
+	"io-engine-backend/src/ecs"
+	"io-engine-backend/src/math"
+)
+
+type InputSystem struct {
+
+}
+
+func (*InputSystem) Init() {
+	dynamic.Register("NetworkInputComponent", func() interface{} {
+		return &NetworkInputComponent{}
+	})
+}
+
+func (*InputSystem) AddToStorage(entity *ecs.Entity) {
+
+}
+
+func (*InputSystem) RequiredComponentTypes() []ecs.ComponentType {
+	return []ecs.ComponentType{ecs.NetworkInputComponentType}
+}
+
+func (*InputSystem) UpdateSystem(delta float64, world *ecs.World) {
+
+}
+
+type NetworkInputComponent struct {
+	KeyDown    map[KeyCode]bool
+	KeyPressed map[KeyCode]bool
+	KeyUp      map[KeyCode]bool
+
+	MousePosition math.Vector
+
+	MouseDown    map[int]bool
+	MousePressed map[int]bool
+	MouseUp      map[int]bool
+}
+
+
+
+func (self *NetworkInputComponent) Id() int {
+	return int(ecs.NetworkInputComponentType)
+}
+
+func (self *NetworkInputComponent) CreateComponent() {
+	self.KeyUp = map[KeyCode]bool{}
+	self.KeyDown = map[KeyCode]bool{}
+	self.KeyPressed = map[KeyCode]bool{}
+	self.MouseDown = map[int]bool{}
+	self.MousePressed = map[int]bool{}
+	self.MouseUp = map[int]bool{}
+	self.MousePosition = math.VectorZero()
+}
+
+func (self *NetworkInputComponent) DestroyComponent() {
+
+}
+
+func (self *NetworkInputComponent) Clone() ecs.Component {
+	return new(NetworkInputComponent)
+}
+
+func (self *NetworkInputComponent) Any() bool {
+	return false
+}
+
+func (self *NetworkInputComponent) AnyKeyPressed() bool {
+	for _, i := range self.KeyPressed {
+		if i {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (self *NetworkInputComponent) HandleClientInput(bytes []byte) {
+
+	fromBytes := NetworkInputFromBytes(bytes[0])
+
+	self.SetKeyPresses(fromBytes, Up)
+	self.SetKeyPresses(fromBytes, Down)
+	self.SetKeyPresses(fromBytes, Left)
+	self.SetKeyPresses(fromBytes, Right)
+	self.SetKeyPresses(fromBytes, X)
+	self.SetKeyPresses(fromBytes, C)
+
+	marshal, _ := json.Marshal(self)
+	fmt.Println(string(marshal))
+
+}
+
+func (self *NetworkInputComponent) SetKeyPresses(fromBytes NetworkInput, code KeyCode) {
+	if !self.KeyPressed[code] && fromBytes.Up {
+		self.KeyDown[code] = true
+	}
+	if self.KeyPressed[code] && !fromBytes.Up {
+		self.KeyDown[code] = false
+	}
+	self.KeyPressed[code] = fromBytes.Up
+}
+
+type KeyCode int
+
+const (
+	Up    KeyCode = 38
+	Down  KeyCode = 40
+	Right KeyCode = 37
+	Left  KeyCode = 39
+	X     KeyCode = 88
+	C     KeyCode = 67
+)
+

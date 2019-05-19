@@ -1,10 +1,10 @@
-package shared_test
+package ecs_test
 
 import (
 	"testing"
 	"github.com/stretchr/testify/assert"
 	"io-engine-backend/src/game"
-	"io-engine-backend/src/shared"
+	"io-engine-backend/src/ecs"
 )
 
 func TestCreateEntityFromJson(t *testing.T) {
@@ -17,7 +17,7 @@ func TestCreateEntityFromJson(t *testing.T) {
 		]
 	}`
 
-	w := shared.NewWorld()
+	w := ecs.NewWorld()
 
 	w.AddSystem(new(game.CollisionSystem))
 
@@ -46,7 +46,7 @@ func TestCreateMultipleEntitiesFromJson(t *testing.T) {
 		}
 	]`
 
-	w := shared.World{}
+	w := ecs.World{}
 
 	w.AddSystem(new(game.CollisionSystem))
 
@@ -80,7 +80,7 @@ func TestWorld_AddEntityToWorld(t *testing.T) {
 		}
 	]`
 
-	w := shared.World{}
+	w := ecs.World{}
 
 	system := new(game.CollisionSystem)
 	w.AddSystem(system)
@@ -106,7 +106,7 @@ func TestCreateGlobalFromJson(t *testing.T) {
 		{"Type":"RawInputGlobal"}
 	]`
 
-	w := shared.NewWorld()
+	w := ecs.NewWorld()
 
 	w.AddSystem(new(game.CollisionSystem))
 	//w.AddSystem(new(game.CanvasRenderSystem))
@@ -118,4 +118,26 @@ func TestCreateGlobalFromJson(t *testing.T) {
 	assert.NotNil(t, w.Globals)
 	assert.NotNil(t, 2, len(w.Globals))
 
+}
+
+func TestStorage(t *testing.T) {
+
+	entity := ecs.Entity{}
+	entity.Components = make(map[int]ecs.Component)
+	entity.Components[0] = new(game.PositionComponent)
+
+	s1 := ecs.NewStorage()
+	s2 := ecs.NewStorage()
+
+	component := entity.Components[0].(ecs.Component)
+	s1.Components[0] = &component
+
+	component2 := entity.Components[0].(ecs.Component)
+	s2.Components[0] = &component2
+
+	ref := (*s1.Components[0]).(*game.PositionComponent)
+	ref.Position.Set(1,1)
+
+	assert.Equal(t, 1, (*s2.Components[0]).(*game.PositionComponent).Position.X())
+	assert.Equal(t, 1, (*s2.Components[0]).(*game.PositionComponent).Position.Y())
 }

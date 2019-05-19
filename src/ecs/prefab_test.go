@@ -1,10 +1,10 @@
-package shared_test
+package ecs_test
 
 import (
 	"github.com/stretchr/testify/assert"
 	"io-engine-backend/src/game"
 	"io-engine-backend/src/math"
-	"io-engine-backend/src/shared"
+	"io-engine-backend/src/ecs"
 	"testing"
 )
 
@@ -31,13 +31,13 @@ func TestNewPrefabManager(t *testing.T) {
 	}
 }`
 
-	w := shared.NewWorld()
+	w := ecs.NewWorld()
 
 	w.AddSystem(new(game.CollisionSystem))
 	//w.AddSystem(new(client.InputSystem))
 	w.AddSystem(new(game.KeyboardMovementSystem))
 
-	pm, err := shared.NewPrefabManager(json, w)
+	pm, err := ecs.NewPrefabManager(json, w)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, pm.Prefabs[0])
@@ -67,13 +67,13 @@ func TestPrefabClone(t *testing.T) {
 	}
 }`
 
-	w := shared.NewWorld()
+	w := ecs.NewWorld()
 
 	w.AddSystem(new(game.CollisionSystem))
 	//w.AddSystem(new(client.InputSystem))
 	w.AddSystem(new(game.KeyboardMovementSystem))
 
-	pm, err := shared.NewPrefabManager(json, w)
+	pm, err := ecs.NewPrefabManager(json, w)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, pm.Prefabs[0])

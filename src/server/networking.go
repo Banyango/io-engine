@@ -9,7 +9,7 @@ import (
 	"github.com/Banyango/socker"
 	"github.com/goburrow/dynamic"
 	"github.com/pion/webrtc"
-	. "io-engine-backend/src/shared"
+	. "io-engine-backend/src/ecs"
 	"sync"
 	"time"
 )
@@ -28,28 +28,33 @@ type ServerGlobal struct {
 	PlayerIndex           uint16
 }
 
-type EntityChange struct {
-	OwnerId         uint16
-	NetworkId       uint16
-	NetworkPrefabId byte
-	PrefabId        byte
-	Type            EntityChangeType
-	Buffer          bool
-}
-
-type NetworkData struct {
-	OwnerId   uint16
-	NetworkId uint16
-	Position  []int
-	Velocity  []float32
-}
-
-type WorldStatePacket struct {
-	Updates []NetworkData
-}
-
 func (self *ServerGlobal) Id() int {
 	return ServerGlobalType
+}
+
+func (self *ServerGlobal) ServerSpawn(ownerId uint16, world *World, prefabId byte, networkPrefab byte, buffer bool) {
+
+	entity, err := world.PrefabData.CreatePrefab(int(prefabId))
+
+	if err != nil {
+		fmt.Println("Error Spawning entity: ", int(prefabId))
+		return
+	}
+
+	entity.Id = world.FetchAndIncrementId()
+
+	networkInstanceComponent := new(NetworkInstanceComponent)
+
+	networkInstanceComponent.Data = NetworkData{}
+	networkInstanceComponent.Data.OwnerId = ownerId
+	networkInstanceComponent.Data.NetworkId = uint16(entity.Id)
+
+	entity.Components[int(NetworkInstanceComponentType)] = networkInstanceComponent
+
+	world.AddEntityToWorld(entity)
+
+	self.NetworkSpawn(ownerId, uint16(entity.Id), prefabId, networkPrefab, buffer)
+
 }
 
 func (self *ServerGlobal) NetworkSpawn(ownerId uint16, networkId uint16, prefabId byte, networkPrefab byte, buffer bool) {
@@ -87,6 +92,7 @@ func (self *ServerGlobal) CreateGlobal(world *World) {
 }
 
 func (self *ServerGlobal) Clear() {
+	self.CurrentState.Updates = self.CurrentState.Updates[:0]
 	self.CurrentEntityChanges = self.CurrentEntityChanges[:0]
 }
 
@@ -110,37 +116,39 @@ Network Server System
 
 type ConnectionHandlerSystem struct {
 	Connections          Storage
-	MasterDataChannel    *webrtc.DataChannel
-	MasterPeerConnection *webrtc.PeerConnection
+	NetworkInput	     Storage
 }
 
 func (self *ConnectionHandlerSystem) Init() {
 	self.Connections = NewStorage()
+	self.NetworkInput = NewStorage()
 
 	dynamic.Register("ServerGlobal", func() interface{} {
 		return &ServerGlobal{}
 	})
 }
 
-func (self *ConnectionHandlerSystem) AddToStorage(entity Entity) {
+func (self *ConnectionHandlerSystem) AddToStorage(entity *Entity) {
 	for k := range entity.Components {
 		component := entity.Components[k].(Component)
 
 		if component.Id() == int(NetworkConnectionComponentType) {
 			self.Connections.Components[entity.Id] = &component
+		} else if component.Id() == int(NetworkInputComponentType) {
+			self.NetworkInput.Components[entity.Id] = &component
 		}
 	}
 }
 
 func (*ConnectionHandlerSystem) RequiredComponentTypes() []ComponentType {
-	return []ComponentType{NetworkConnectionComponentType}
+	return []ComponentType{NetworkConnectionComponentType, NetworkInputComponentType}
 }
 
 func (self *ConnectionHandlerSystem) UpdateSystem(delta float64, world *World) {
 
 	global := world.Globals[ServerGlobalType].(*ServerGlobal)
 
-	var bytesToWrite []byte
+	var wsBytesToWrite []byte
 
 	if len(global.CurrentEntityChanges) > 0 {
 
@@ -158,31 +166,51 @@ func (self *ConnectionHandlerSystem) UpdateSystem(delta float64, world *World) {
 			return
 		}
 
-		bytesToWrite = buf.Bytes()
+		wsBytesToWrite = buf.Bytes()
 
 	}
 
+	var udpBytesToWrite []byte
+	if len(global.CurrentState.Updates) > 0 {
+		var gameStateBuffer bytes.Buffer
+		enc := gob.NewEncoder(&gameStateBuffer)
+		if err := enc.Encode(global.CurrentState); err != nil {
+			fmt.Printf("Encoding Failed")
+			return
+		}
+		udpBytesToWrite = gameStateBuffer.Bytes()
+	}
+
 	for entity, _ := range self.Connections.Components {
+
+		input := (*self.NetworkInput.Components[entity]).(*NetworkInputComponent)
 		net := (*self.Connections.Components[entity]).(*NetworkConnectionComponent)
+
 		net.WSConnHandler.Handle()
 
 		// only send data changes if the webrtc connection is open.
 		if net.IsDataChannelOpen {
-			if len(bytesToWrite) > 0 {
-				net.WSConnHandler.Write(bytesToWrite)
+			if len(wsBytesToWrite) > 0 {
+				net.WSConnHandler.Write(wsBytesToWrite)
 			}
 
 			// handle webrtc messages
 			select {
 			case message, ok := <-net.UdpIn:
 				if ok {
-					print(message)
+					//fmt.Println("Handling input")
+					input.HandleClientInput(message)
 				}
 			default:
 			}
 
-			// send webrtc messages
-			//net.DataChannel.Send()
+			if net.DataChannel != nil && len(udpBytesToWrite) > 0 {
+				err := net.DataChannel.Send(udpBytesToWrite)
+				if err != nil {
+					fmt.Println("Error Writing to data channel player:", net.PlayerId)
+				}
+			}
+
 		}
 
 	}
@@ -212,6 +240,102 @@ type ServerConnectionHandshakePacket struct {
 	// remove this
 	BufferedChanges []EntityChange
 }
+
+type EntityChange struct {
+	OwnerId         uint16
+	NetworkId       uint16
+	NetworkPrefabId byte
+	PrefabId        byte
+	Type            EntityChangeType
+	Buffer          bool
+}
+
+// Serialized Bytes of the entity and components.
+type NetworkData struct {
+	OwnerId   uint16
+	NetworkId uint16
+	Data map[int][]byte
+}
+
+type WorldStatePacket struct {
+	Updates []NetworkData
+}
+
+type ReadSyncUDP interface {
+	ReadUDP(networkPacket *NetworkData)
+}
+
+type WriteSyncUDP interface {
+	WriteUDP(networkPacket *NetworkData)
+}
+
+type NetworkInfo struct {
+	PlayerId uint16
+	NetworkInput
+}
+
+type NetworkInput struct {
+	Up    bool
+	Down  bool
+	Right bool
+	Left  bool
+	X     bool
+	C     bool
+	//Mouse1 bool
+	//Mouse2 bool
+	//mousePos
+}
+
+func (self *NetworkInput) ToBytes() []byte {
+	value := byte(0)
+
+	if self.Up {
+		setBit(&value, 0)
+	}
+
+	if self.Down {
+		setBit(&value, 1)
+	}
+
+	if self.Right {
+		setBit(&value, 2)
+	}
+
+	if self.Left {
+		setBit(&value, 3)
+	}
+
+	if self.X {
+		setBit(&value, 4)
+	}
+
+	if self.C {
+		setBit(&value, 5)
+	}
+
+	return []byte{value}
+}
+
+func NetworkInputFromBytes(value byte) NetworkInput {
+	return NetworkInput{
+		Up:    hasBit(value, 0),
+		Down:  hasBit(value, 1),
+		Right: hasBit(value, 2),
+		Left:  hasBit(value, 3),
+		X:     hasBit(value, 4),
+		C:     hasBit(value, 5),
+	}
+}
+
+func hasBit(n byte, pos uint) bool {
+	val := n & (1 << pos)
+	return val > 0
+}
+
+func setBit(n *byte, pos uint) {
+	*n |= 1 << pos
+}
+
 
 type EntityChangeType byte
 
@@ -286,6 +410,8 @@ func (self *NetworkConnectionComponent) ConnectToDataChannel(data []byte) {
 
 	peerConnection.OnDataChannel(func(d *webrtc.DataChannel) {
 		fmt.Printf("New DataChannel %s %d\n", d.Label(), d.ID())
+
+		self.DataChannel = d
 
 		d.OnOpen(func() {
 			self.IsDataChannelOpen = true
@@ -391,6 +517,7 @@ func Decode(in string, obj interface{}) {
 
 	err = json.Unmarshal(b, obj)
 	if err != nil {
+		fmt.Println("Decode Failure")
 		panic(err)
 	}
 }
@@ -398,8 +525,82 @@ func Decode(in string, obj interface{}) {
 func Encode(obj interface{}) string {
 	b, err := json.Marshal(obj)
 	if err != nil {
+		fmt.Println("Encode Failure")
 		panic(err)
 	}
 
 	return base64.StdEncoding.EncodeToString(b)
 }
+
+/*
+----------------------------------------------------------------------------------------------------------------
+Network Instance Component
+----------------------------------------------------------------------------------------------------------------
+*/
+
+type NetworkInstanceComponent struct {
+	Data NetworkData
+}
+
+func (*NetworkInstanceComponent) Id() int {
+	return int(NetworkInstanceComponentType)
+}
+
+func (self *NetworkInstanceComponent) CreateComponent() {
+	self.Data.Data = make(map[int][]byte)
+}
+
+func (*NetworkInstanceComponent) DestroyComponent() {
+
+}
+
+func (*NetworkInstanceComponent) Clone() Component {
+	return new(NetworkInstanceComponent)
+}
+
+type NetworkInstanceDataCollectionSystem struct {
+	NetworkInstances Storage
+}
+
+func (self *NetworkInstanceDataCollectionSystem) Init() {
+	self.NetworkInstances = NewStorage()
+}
+
+func (self *NetworkInstanceDataCollectionSystem) AddToStorage(entity *Entity) {
+
+	keys := map[int]*Storage {
+		int(NetworkInstanceComponentType):&self.NetworkInstances,
+	}
+
+	AddComponentsToStorage(entity, keys)
+}
+
+func (self *NetworkInstanceDataCollectionSystem) RequiredComponentTypes() []ComponentType {
+	return []ComponentType{NetworkInstanceComponentType}
+}
+
+func (self *NetworkInstanceDataCollectionSystem) UpdateSystem(delta float64, world *World) {
+
+	global := world.Globals[ServerGlobalType].(*ServerGlobal)
+
+	for entity, _ := range self.NetworkInstances.Components {
+
+		instance := (*self.NetworkInstances.Components[entity]).(*NetworkInstanceComponent)
+
+		entity := world.Entities[entity]
+
+		for _,val:= range entity.Components {
+			if syncVar, ok := val.(WriteSyncUDP); ok {
+				syncVar.WriteUDP(&instance.Data)
+			}
+		}
+
+		global.NetworkSendUDP(instance.Data)
+
+	}
+}
+
+// todo there is an issue with creating client side entities whereby the id will collide with the server id of other network entities.
+
+
+

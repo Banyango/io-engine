@@ -1,4 +1,4 @@
-package client
+package web
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"github.com/Banyango/socker"
 	"io-engine-backend/src/server"
-	. "io-engine-backend/src/shared"
+	. "io-engine-backend/src/ecs"
 	"net/url"
 	"path"
 	"sync"
@@ -33,10 +33,12 @@ type NetworkedClientSystem struct {
 
 	WebRTCConnection js.Value
 
+	IsConnected      bool
 	Packets          []server.BufferedEntityPacket
 	Buffered         []server.EntityChange
-	State			 server.WorldStatePacket
+	State            server.WorldStatePacket
 	mux              sync.Mutex
+	WorldStatePacket []server.WorldStatePacket
 }
 
 
@@ -173,8 +175,36 @@ func (self *NetworkedClientSystem) SetupWebRTC () {
 	log("Adding onmessage..")
 	self.WebRTCConnection.Get("sendChannel").Set("onmessage", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 
-		return nil;
+		dataJSArray := js.Global().Get("Uint8Array").New(args[0].Get("data"))
+		message := make([]byte, args[0].Get("data").Get("byteLength").Int())
+
+		jsBuf := js.TypedArrayOf(message)
+		jsBuf.Call("set", dataJSArray, 0)
+
+		var packet server.WorldStatePacket
+
+		if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
+			fmt.Println("Error in Packet",err)
+		}
+
+		self.WorldStatePacket = append(self.WorldStatePacket, packet)
+
+		jsBuf.Release()
+
+		return nil
 	}));
+
+	self.WebRTCConnection.Get("sendChannel").Set("onclose", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		log("sendChannel closed")
+		self.IsConnected = false
+		return nil
+	}))
+
+	self.WebRTCConnection.Get("sendChannel").Set("onopen", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		log("sendChannel opened")
+		self.IsConnected = true
+		return nil
+	}))
 }
 
 // Encode encodes the input in base64
@@ -182,6 +212,7 @@ func (self *NetworkedClientSystem) SetupWebRTC () {
 func Encode(obj interface{}) string {
 	b, err := json.Marshal(obj)
 	if err != nil {
+		log("Client Encode Failure")
 		panic(err)
 	}
 
@@ -217,13 +248,10 @@ func log(str string) {
 }
 
 func (self *NetworkedClientSystem) RequiredComponentTypes() []ComponentType {
-	return []ComponentType{
-		RawInputGlobalType,
-		InputGlobalType,
-	}
+	return []ComponentType{}
 }
 
-func (self *NetworkedClientSystem) AddToStorage(entity Entity) {
+func (self *NetworkedClientSystem) AddToStorage(entity *Entity) {
 
 }
 
@@ -243,6 +271,10 @@ func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
 				if entity, err := world.PrefabData.CreatePrefab(prefabIdToCreate); err != nil {
 					fmt.Println(err)
 				} else {
+
+					// todo add network instance component??
+					entity.Id = int64(change.NetworkId)
+
 					world.AddEntityToWorld(entity)
 				}
 			}
@@ -258,11 +290,12 @@ func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
 
 				prefabIdToCreate := self.GetPrefabId(change)
 
-				js.Global().Get("console").Call("log", "Creating entity: ", prefabIdToCreate)
+				js.Global().Get("console").Call("log", "Creating entity: ", prefabIdToCreate, " networkId: ", change.NetworkId)
 
 				if entity, err := world.PrefabData.CreatePrefab(prefabIdToCreate); err != nil {
 					fmt.Println(err)
 				} else {
+					entity.Id = int64(change.NetworkId)
 					world.AddEntityToWorld(entity)
 				}
 			}
@@ -277,7 +310,50 @@ func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
 		self.Packets = self.Packets[:0]
 	}
 
+	if len(self.WorldStatePacket) > 0 {
+
+		// todo add timestamp to make sure this is the latest
+		packet := self.WorldStatePacket[len(self.WorldStatePacket)-1]
+
+		if len(packet.Updates) > 0 {
+			for _, val := range packet.Updates {
+
+				entity := world.Entities[int64(val.NetworkId)]
+
+				for j := range val.Data {
+
+					if comp, ok := entity.Components[j]; ok {
+						if readSync, ok := comp.(server.ReadSyncUDP); ok {
+							readSync.ReadUDP(&val)
+						}
+					} else {
+						log("Something went wrong client entity doesn't have component.")
+					}
+
+				}
+			}
+		}
+
+		self.WorldStatePacket = self.WorldStatePacket[:0]
+
+	}
+
+	if self.IsDataChannelConnected() {
+		inputGlobal := world.Globals[RawInputGlobalType].(*RawInputGlobal)
+
+		jsBuf := js.TypedArrayOf(inputGlobal.ToNetworkInput().ToBytes())
+
+		log("sending input" + jsBuf.String())
+		self.WebRTCConnection.Get("sendChannel").Call("send", jsBuf)
+
+		jsBuf.Release()
+	}
 }
+
+func (self *NetworkedClientSystem) IsDataChannelConnected() bool {
+	return self.IsConnected
+}
+
 
 func (self *NetworkedClientSystem) GetPrefabId(change server.EntityChange) int {
 	prefabIdToCreate := int(change.PrefabId)
@@ -287,5 +363,16 @@ func (self *NetworkedClientSystem) GetPrefabId(change server.EntityChange) int {
 	return prefabIdToCreate
 }
 
+type ClientNetworkGlobal struct {
+	Packets []server.WorldStatePacket
+}
+
+func (*ClientNetworkGlobal) Id() int {
+	return ClientGlobalType
+}
+
+func (self *ClientNetworkGlobal) CreateGlobal(world *World) {
+	self.Packets = []server.WorldStatePacket{}
+}
 
 

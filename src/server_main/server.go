@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"github.com/Banyango/socker"
 	"github.com/gorilla/websocket"
+	"io-engine-backend/src/ecs"
 	"io-engine-backend/src/game"
 	"io-engine-backend/src/server"
-	"io-engine-backend/src/shared"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -23,21 +23,23 @@ func main() {
 	}
 
 	fmt.Println("Creating World.")
-	w := shared.NewWorld()
+	w := ecs.NewWorld()
 
-	input := new(game.InputSystem)
+	input := new(server.InputSystem)
 	collision := new(game.CollisionSystem)
 	movement := new(game.KeyboardMovementSystem)
-	playerState := new(game.PlayerStateSystem)
+	playerState := new(server.PlayerStateSystem)
 	networkServer := new(server.ConnectionHandlerSystem)
+	networkInstance := new(server.NetworkInstanceDataCollectionSystem)
 
 	w.AddSystem(playerState)
 	w.AddSystem(input)
 	w.AddSystem(collision)
 	w.AddSystem(movement)
 	w.AddSystem(networkServer)
+	w.AddSystem(networkInstance)
 
-	pm, err := shared.NewPrefabManager(string(gameJson), w)
+	pm, err := ecs.NewPrefabManager(string(gameJson), w)
 
 	if err != nil {
 		log.Fatal(err)
@@ -61,10 +63,10 @@ func main() {
 }
 
 type Server struct {
-	World *shared.World
+	World *ecs.World
 }
 
-func mainLoop(w *shared.World) {
+func mainLoop(w *ecs.World) {
 	for true {
 
 		w.LastFrameTime = w.CurrentFrameTime
@@ -108,12 +110,15 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 	}
 
 	networkConnectionComponent := new(server.NetworkConnectionComponent)
-	entity.Components[int(shared.NetworkConnectionComponentType)] = networkConnectionComponent
+	entity.Components[int(ecs.NetworkConnectionComponentType)] = networkConnectionComponent
+
+	networkInputComponent := new(server.NetworkInputComponent)
+	entity.Components[int(ecs.NetworkInputComponentType)] = networkInputComponent
 
 	entity.Id = self.World.FetchAndIncrementId()
 	self.World.AddEntityToWorld(entity)
 
-	global := self.World.Globals[shared.ServerGlobalType].(*server.ServerGlobal)
+	global := self.World.Globals[ecs.ServerGlobalType].(*server.ServerGlobal)
 
 	networkConnectionComponent.WSConnHandler = socker.NewClientConnection(conn)
 	networkConnectionComponent.PlayerId = global.FetchAndIncrementPlayerId()

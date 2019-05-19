@@ -1,4 +1,4 @@
-package shared
+package ecs
 
 import (
 	"encoding/json"
@@ -30,7 +30,8 @@ const (
 	CircleComponentType
 	ArcadeMovementComponentType
 	NetworkConnectionComponentType
-	NetworkDataComponentType
+	NetworkInstanceComponentType
+	NetworkInputComponentType
 )
 
 type GlobalType int
@@ -40,6 +41,7 @@ const (
 	RenderGlobalType
 	CreatorGlobalType
 	ServerGlobalType
+	ClientGlobalType
 )
 
 type Storage struct {
@@ -74,7 +76,7 @@ Systems store a list of components
  */
 type System interface {
 	Init()
-	AddToStorage(entity Entity)
+	AddToStorage(entity *Entity)
 	RequiredComponentTypes() []ComponentType
 	UpdateSystem(delta float64, world *World)
 }
@@ -290,7 +292,7 @@ func (w *World) AddEntityToWorld(entity Entity) {
 		system := *w.Systems[i]
 
 		if w.DoesEntityHaveAllRequiredComponentTypes(&entity, system.RequiredComponentTypes()) {
-			system.AddToStorage(entity)
+			system.AddToStorage(&entity)
 		}
 	}
 
@@ -298,7 +300,7 @@ func (w *World) AddEntityToWorld(entity Entity) {
 		system := *w.RenderSystems[i]
 
 		if w.DoesEntityHaveAllRequiredComponentTypes(&entity, system.RequiredComponentTypes()) {
-			system.AddToStorage(entity)
+			system.AddToStorage(&entity)
 		}
 	}
 
@@ -330,7 +332,7 @@ func (w *World) AddComponentToEntity(c Component, entity Entity) {
 		system := *w.Systems[i]
 
 		if w.DoesEntityHaveAllRequiredComponentTypes(&entity, system.RequiredComponentTypes()) {
-			system.AddToStorage(entity)
+			system.AddToStorage(&entity)
 		}
 	}
 
@@ -338,7 +340,7 @@ func (w *World) AddComponentToEntity(c Component, entity Entity) {
 		system := *w.RenderSystems[i]
 
 		if w.DoesEntityHaveAllRequiredComponentTypes(&entity, system.RequiredComponentTypes()) {
-			system.AddToStorage(entity)
+			system.AddToStorage(&entity)
 		}
 	}
 }

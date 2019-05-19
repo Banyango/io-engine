@@ -1,4 +1,4 @@
-package client_test
+package web_test
 
 import (
 	json2 "encoding/json"

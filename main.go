@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io-engine-backend/src/client"
 	"io-engine-backend/src/game"
-	"io-engine-backend/src/shared"
+	"io-engine-backend/src/ecs"
 	"os"
 	"syscall/js"
 	"time"
@@ -25,27 +25,23 @@ func main() {
 	gameJsonValue := <-gameJson
 
 	fmt.Println("Creating World.")
-	w := shared.NewWorld()
+	w := ecs.NewWorld()
 
 	rawInput := new(client.ClientInputSystem)
-	input := new(game.InputSystem)
 	collision := new(game.CollisionSystem)
-	movement := new(game.KeyboardMovementSystem)
 	netClient := new(client.NetworkedClientSystem)
 	//clientData := new(client.ClientNetworkDataSystem)
 
 	renderer := new(client.CanvasRenderSystem)
 
 	w.AddSystem(rawInput)
-	w.AddSystem(input)
 	w.AddSystem(collision)
-	w.AddSystem(movement)
 	w.AddSystem(netClient)
 	//w.AddSystem(clientData)
 
 	w.AddRenderer(renderer)
 
-	pm, err := shared.NewPrefabManager(string(gameJsonValue), w)
+	pm, err := ecs.NewPrefabManager(string(gameJsonValue), w)
 
 	if err != nil {
 		fmt.Println("Error creating prefab manager")
@@ -57,7 +53,7 @@ func main() {
 	MainLoopClient(w)
 }
 
-func MainLoopClient(self *shared.World) {
+func MainLoopClient(self *ecs.World) {
 
 	done := make(chan struct{}, 0)
 

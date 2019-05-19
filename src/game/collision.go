@@ -3,8 +3,9 @@ package game
 import (
 	"github.com/SolarLune/resolv/resolv"
 	"github.com/goburrow/dynamic"
+	. "io-engine-backend/src/ecs"
 	"io-engine-backend/src/math"
-	. "io-engine-backend/src/shared"
+	"io-engine-backend/src/server"
 )
 
 
@@ -44,7 +45,7 @@ func (self *CollisionSystem) UpdateFrequency() int {
 	return 60
 }
 
-func (self *CollisionSystem) AddToStorage(entity Entity) {
+func (self *CollisionSystem) AddToStorage(entity *Entity) {
 	for k := range entity.Components {
 		component := entity.Components[k].(Component)
 
@@ -129,6 +130,30 @@ Position Component
 
 type PositionComponent struct {
 	Position math.VectorInt
+}
+
+func (self *PositionComponent) ReadUDP(networkPacket *server.NetworkData) {
+
+	var data struct{
+		X int
+		Y int
+	}
+
+	server.DecodeNetworkDataBytes(networkPacket, self.Id(), &data)
+
+	self.Position.Set(data.X, data.Y)
+}
+
+func (self *PositionComponent) WriteUDP(networkPacket *server.NetworkData) {
+	var data struct{
+		X int
+		Y int
+	}
+
+	data.X = self.Position.X()
+	data.Y = self.Position.Y()
+
+	server.EncodeNetworkDataBytes(networkPacket, self.Id(), data)
 }
 
 func (self *PositionComponent) Id() int {

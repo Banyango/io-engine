@@ -3,6 +3,8 @@ class WebRTCConnection {
 
         this.webSocket = websocket;
 
+        this.isConnected = false;
+
         console.log("[[js]: starting init]");
         this.pc = new RTCPeerConnection({
             iceServers: [
@@ -17,10 +19,9 @@ class WebRTCConnection {
             ordered:false,
             maxRetransmits:1,
         });
-        console.log("[[js]: data channel created]");
+        this.sendChannel.binaryType = 'arraybuffer';
 
-        this.sendChannel.onclose = () => console.log('sendChannel has closed');
-        this.sendChannel.onopen = () => console.log('sendChannel has opened');
+        console.log("[[js]: data channel created]");
 
         this.pc.oniceconnectionstatechange = e => console.log(`[js]: icestate:${this.pc.iceConnectionState}`);
 

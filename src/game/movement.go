@@ -3,12 +3,14 @@ package game
 import (
 	"github.com/goburrow/dynamic"
 	"io-engine-backend/src/math"
-	. "io-engine-backend/src/shared"
+	"io-engine-backend/src/server"
+	. "io-engine-backend/src/ecs"
 )
 
 type KeyboardMovementSystem struct {
 	collisionComponents Storage
 	arcadeComponents Storage
+	inputComponents Storage
 }
 
 func (self *KeyboardMovementSystem) Init() {
@@ -19,17 +21,18 @@ func (self *KeyboardMovementSystem) Init() {
 
 	self.collisionComponents = NewStorage()
 	self.arcadeComponents = NewStorage()
+	self.inputComponents = NewStorage()
 }
 
 func (self *KeyboardMovementSystem) RequiredComponentTypes() []ComponentType {
-	return []ComponentType{CollisionComponentType, ArcadeMovementComponentType}
+	return []ComponentType{CollisionComponentType, ArcadeMovementComponentType, NetworkInputComponentType}
 }
 
 func (self *KeyboardMovementSystem) UpdateFrequency() int {
 	return 60
 }
 
-func (self *KeyboardMovementSystem) AddToStorage(entity Entity) {
+func (self *KeyboardMovementSystem) AddToStorage(entity *Entity) {
 	for k := range entity.Components {
 		component := entity.Components[k].(Component)
 
@@ -43,34 +46,29 @@ func (self *KeyboardMovementSystem) AddToStorage(entity Entity) {
 
 func (self *KeyboardMovementSystem) UpdateSystem(delta float64, world *World) {
 
-	input := world.Globals[InputGlobalType].(*InputGlobal)
-
 	for entity, _ := range self.collisionComponents.Components {
 
 		arcade := (*self.arcadeComponents.Components[entity]).(*ArcadeMovementComponent)
 		collider := (*self.collisionComponents.Components[entity]).(*CollisionComponent)
+		input := (*self.collisionComponents.Components[entity]).(*server.NetworkInputComponent)
 
 		direction := math.NewVector(float64(0),float64(0))
 
-		if(input.AnyKeyPressed()) {
+		if input.AnyKeyPressed() {
 
-			if(input.KeyPressed[Up]) {
-				//fmt.Println("up")
+			if input.KeyPressed[server.Up] {
 				direction = direction.Add(math.VectorUp())
 			}
 
-			if(input.KeyPressed[Down]) {
-				//fmt.Println("down")
+			if input.KeyPressed[server.Down] {
 				direction = direction.Add(math.VectorDown())
 			}
 
-			if(input.KeyPressed[Left]) {
-				//fmt.Println("left")
+			if input.KeyPressed[server.Left] {
 				direction = direction.Add(math.VectorRight())
 			}
 
-			if(input.KeyPressed[Right]) {
-				//fmt.Println("right")
+			if input.KeyPressed[server.Right] {
 				direction = direction.Add(math.VectorLeft())
 			}
 

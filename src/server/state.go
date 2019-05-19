@@ -1,10 +1,8 @@
-package game
+package server
 
 import (
-	"fmt"
 	"github.com/goburrow/dynamic"
-	. "io-engine-backend/src/server"
-	. "io-engine-backend/src/shared"
+	. "io-engine-backend/src/ecs"
 )
 
 type PlayerStateSystem struct{
@@ -21,7 +19,7 @@ func (self *PlayerStateSystem) Init() {
 	self.Network = NewStorage()
 }
 
-func (self *PlayerStateSystem) AddToStorage(entity Entity) {
+func (self *PlayerStateSystem) AddToStorage(entity *Entity) {
 	for k := range entity.Components {
 		component := entity.Components[k].(Component)
 
@@ -50,18 +48,7 @@ func (self *PlayerStateSystem) UpdateSystem(delta float64, world *World) {
 		if state.State == Spawn {
 			global := world.Globals[int(ServerGlobalType)].(*ServerGlobal)
 
-			entity, err := world.PrefabData.CreatePrefab(1)
-
-			if err != nil {
-				fmt.Println("Error creating entity: ", 1)
-				return
-			}
-
-			entity.Id = world.FetchAndIncrementId()
-
-			world.AddEntityToWorld(entity)
-
-			global.NetworkSpawn(connected.PlayerId, uint16(entity.Id), 1, 2, true)
+			global.ServerSpawn(connected.PlayerId, world, 1, 2, true)
 
 			state.State = Playing
 		}

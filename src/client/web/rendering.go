@@ -1,4 +1,4 @@
-package client
+package web
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"github.com/lucasb-eyer/go-colorful"
 	"io-engine-backend/src/game"
 	"io-engine-backend/src/math"
-	. "io-engine-backend/src/shared"
+	. "io-engine-backend/src/ecs"
 	math2 "math"
 	"syscall/js"
 )
@@ -37,7 +37,7 @@ func (self *CanvasRenderSystem) UpdateFrequency() int {
 	return 1
 }
 
-func (self *CanvasRenderSystem) AddToStorage(entity Entity) {
+func (self *CanvasRenderSystem) AddToStorage(entity *Entity) {
 	for k := range entity.Components {
 		component := entity.Components[k].(Component)
 

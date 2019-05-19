@@ -1,10 +1,11 @@
-package client
+package web
 
 import (
 	"github.com/goburrow/dynamic"
-	"io-engine-backend/src/game"
 	"io-engine-backend/src/math"
-	. "io-engine-backend/src/shared"
+	"io-engine-backend/src/server"
+	. "io-engine-backend/src/ecs"
+	"strconv"
 	"syscall/js"
 )
 
@@ -16,31 +17,21 @@ func (self *ClientInputSystem) Init() {
 	dynamic.Register("RawInputGlobal", func() interface{} {
 		return &RawInputGlobal{}
 	})
-
 }
 
 func (self *ClientInputSystem) RequiredComponentTypes() []ComponentType {
-	return []ComponentType{RawInputGlobalType, InputGlobalType}
+	return []ComponentType{RawInputGlobalType}
 }
 
-func (self *ClientInputSystem) UpdateFrequency() int {
-	return 1
-}
-
-func (self *ClientInputSystem) AddToStorage(entity Entity) {
+func (self *ClientInputSystem) AddToStorage(entity *Entity) {
 
 }
 
 func (self *ClientInputSystem) UpdateSystem(delta float64, world *World) {
-	rawInput := world.Globals[RawInputGlobalType].(*RawInputGlobal)
-	input := world.Globals[InputGlobalType].(*game.InputGlobal)
 
-	Copy(input, *rawInput)
-
-	rawInput.Reset();
 }
 
-func Copy(inp *game.InputGlobal, raw RawInputGlobal) {
+func Copy(inp *server.NetworkInputComponent, raw RawInputGlobal) {
 	inp.KeyUp = raw.keyUp
 	inp.KeyPressed = raw.keyPressed
 	inp.KeyDown = raw.keyDown
@@ -52,9 +43,9 @@ func Copy(inp *game.InputGlobal, raw RawInputGlobal) {
 
 type RawInputGlobal struct {
 
-	keyDown map[game.KeyCode]bool
-	keyPressed map[game.KeyCode]bool
-	keyUp map[game.KeyCode]bool
+	keyDown map[server.KeyCode]bool
+	keyPressed map[server.KeyCode]bool
+	keyUp map[server.KeyCode]bool
 
 	mousePosition math.Vector
 
@@ -77,9 +68,9 @@ func (self *RawInputGlobal) Id() int {
 
 func (self *RawInputGlobal) CreateGlobal(world *World) {
 
-	self.keyUp = map[game.KeyCode]bool{}
-	self.keyDown = map[game.KeyCode]bool{}
-	self.keyPressed = map[game.KeyCode]bool{}
+	self.keyUp = map[server.KeyCode]bool{}
+	self.keyDown = map[server.KeyCode]bool{}
+	self.keyPressed = map[server.KeyCode]bool{}
 	self.mouseDown = map[int]bool{}
 	self.mousePressed = map[int]bool{}
 	self.mouseUp = map[int]bool{}
@@ -103,7 +94,7 @@ func (self *RawInputGlobal) CreateGlobal(world *World) {
 
 				//fmt.Println("key down:", e.Get("keyCode"))
 
-				keyCode, err := game.KeyFromString(e.Get("keyCode").String())
+				keyCode, err := KeyFromString(e.Get("keyCode").String())
 
 				if err == nil {
 					self.keyDown[keyCode] = true
@@ -122,7 +113,7 @@ func (self *RawInputGlobal) CreateGlobal(world *World) {
 
 				//fmt.Println("key up:", e.Get("keyCode"))
 
-				keyCode, err := game.KeyFromString(e.Get("keyCode").String())
+				keyCode, err := KeyFromString(e.Get("keyCode").String())
 
 				if err == nil {
 					self.keyPressed[keyCode] = false
@@ -146,7 +137,31 @@ func (self *RawInputGlobal) CreateGlobal(world *World) {
 func (self *RawInputGlobal) Reset() {
 	self.mousePressed = nil
 	self.mouseDown = nil
-	self.keyDown = map[game.KeyCode]bool{}
-	self.keyUp = map[game.KeyCode]bool{}
+	self.keyDown = map[server.KeyCode]bool{}
+	self.keyPressed = map[server.KeyCode]bool{}
+	self.keyUp = map[server.KeyCode]bool{}
 }
+
+func (self *RawInputGlobal) ToNetworkInput() *server.NetworkInput {
+	return &server.NetworkInput{
+		Up:self.keyPressed[server.Up],
+		Down:self.keyPressed[server.Down],
+		Right:self.keyPressed[server.Right],
+		Left:self.keyPressed[server.Left],
+		X:self.keyPressed[server.X],
+		C:self.keyPressed[server.C],
+	}
+}
+
+func KeyFromString(s string) (server.KeyCode, error) {
+	keycode, err := strconv.Atoi(s)
+
+	if err != nil {
+		return -1, err
+	}
+
+	return server.KeyCode(keycode), err
+}
+
+
 
