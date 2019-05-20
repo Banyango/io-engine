@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io-engine-backend/src/client"
+	"io-engine-backend/src/client/web"
 	"io-engine-backend/src/game"
 	"io-engine-backend/src/ecs"
 	"os"
@@ -27,16 +27,18 @@ func main() {
 	fmt.Println("Creating World.")
 	w := ecs.NewWorld()
 
-	rawInput := new(client.ClientInputSystem)
+	rawInput := new(web.ClientInputSystem)
 	collision := new(game.CollisionSystem)
-	netClient := new(client.NetworkedClientSystem)
+	netClient := new(web.NetworkedClientSystem)
+	debugClient := new(web.DebugSystem)
 	//clientData := new(client.ClientNetworkDataSystem)
 
-	renderer := new(client.CanvasRenderSystem)
+	renderer := new(web.CanvasRenderSystem)
 
 	w.AddSystem(rawInput)
 	w.AddSystem(collision)
 	w.AddSystem(netClient)
+	w.AddSystem(debugClient)
 	//w.AddSystem(clientData)
 
 	w.AddRenderer(renderer)

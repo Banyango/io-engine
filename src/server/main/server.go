@@ -55,7 +55,10 @@ func main() {
 	gameServer := Server{World: w}
 
 	http.HandleFunc("/connect", gameServer.ws)
-	http.Handle("/", http.FileServer(http.Dir(".")))
+	http.Handle("/", http.FileServer(http.Dir("./src/client/web/main/")))
+	http.HandleFunc("/game.json", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "./game.json")
+	})
 
 	if err := http.ListenAndServe(":8081", nil); err != nil {
 		log.Fatal(err)

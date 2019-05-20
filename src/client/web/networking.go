@@ -321,8 +321,9 @@ func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
 				entity := world.Entities[int64(val.NetworkId)]
 
 				for j := range val.Data {
+					if _, ok := entity.Components[j]; ok {
 
-					if comp, ok := entity.Components[j]; ok {
+						comp := entity.Components[j]
 						if readSync, ok := comp.(server.ReadSyncUDP); ok {
 							readSync.ReadUDP(&val)
 						}
@@ -343,7 +344,7 @@ func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
 
 		jsBuf := js.TypedArrayOf(inputGlobal.ToNetworkInput().ToBytes())
 
-		log("sending input" + jsBuf.String())
+		//log("sending input" + jsBuf.String())
 		self.WebRTCConnection.Get("sendChannel").Call("send", jsBuf)
 
 		jsBuf.Release()

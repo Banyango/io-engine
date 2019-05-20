@@ -1,8 +1,6 @@
 package server
 
 import (
-	"encoding/json"
-	"fmt"
 	"github.com/goburrow/dynamic"
 	"io-engine-backend/src/ecs"
 	"io-engine-backend/src/math"
@@ -84,26 +82,26 @@ func (self *NetworkInputComponent) HandleClientInput(bytes []byte) {
 
 	fromBytes := NetworkInputFromBytes(bytes[0])
 
-	self.SetKeyPresses(fromBytes, Up)
-	self.SetKeyPresses(fromBytes, Down)
-	self.SetKeyPresses(fromBytes, Left)
-	self.SetKeyPresses(fromBytes, Right)
-	self.SetKeyPresses(fromBytes, X)
-	self.SetKeyPresses(fromBytes, C)
+	self.SetKeyPresses(fromBytes, Up, fromBytes.Up)
+	self.SetKeyPresses(fromBytes, Down, fromBytes.Down)
+	self.SetKeyPresses(fromBytes, Left, fromBytes.Left)
+	self.SetKeyPresses(fromBytes, Right, fromBytes.Right)
+	self.SetKeyPresses(fromBytes, X, fromBytes.X)
+	self.SetKeyPresses(fromBytes, C, fromBytes.C)
 
-	marshal, _ := json.Marshal(self)
-	fmt.Println(string(marshal))
+	//marshal, _ := json.Marshal(self)
+	//fmt.Println(string(marshal))
 
 }
 
-func (self *NetworkInputComponent) SetKeyPresses(fromBytes NetworkInput, code KeyCode) {
-	if !self.KeyPressed[code] && fromBytes.Up {
+func (self *NetworkInputComponent) SetKeyPresses(fromBytes NetworkInput, code KeyCode, value bool) {
+	if !self.KeyPressed[code] && value {
 		self.KeyDown[code] = true
 	}
-	if self.KeyPressed[code] && !fromBytes.Up {
+	if self.KeyPressed[code] && !value {
 		self.KeyDown[code] = false
 	}
-	self.KeyPressed[code] = fromBytes.Up
+	self.KeyPressed[code] = value
 }
 
 type KeyCode int
