@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/Banyango/socker"
-	"io-engine-backend/src/server"
 	. "io-engine-backend/src/ecs"
+	"io-engine-backend/src/server"
 	"net/url"
 	"path"
 	"sync"
@@ -243,8 +243,8 @@ func handleError(err error) {
 	panic(err)
 }
 
-func log(str string) {
-	js.Global().Get("console").Call("log",str)
+func log(str... interface{}) {
+	js.Global().Get("console").Call("log",str...)
 }
 
 func (self *NetworkedClientSystem) RequiredComponentTypes() []ComponentType {
@@ -319,18 +319,14 @@ func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
 			for _, val := range packet.Updates {
 
 				entity := world.Entities[int64(val.NetworkId)]
-
 				for j := range val.Data {
-					if _, ok := entity.Components[j]; ok {
-
-						comp := entity.Components[j]
-						if readSync, ok := comp.(server.ReadSyncUDP); ok {
+					if component, ok := entity.Components[j]; ok {
+						if readSync, ok2 := component.(server.ReadSyncUDP); ok2 {
 							readSync.ReadUDP(&val)
 						}
 					} else {
 						log("Something went wrong client entity doesn't have component.")
 					}
-
 				}
 			}
 		}

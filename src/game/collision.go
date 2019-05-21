@@ -6,7 +6,6 @@ import (
 	. "io-engine-backend/src/ecs"
 	"io-engine-backend/src/math"
 	"io-engine-backend/src/server"
-	"log"
 )
 
 
@@ -134,16 +133,12 @@ type PositionComponent struct {
 }
 
 func (self *PositionComponent) ReadUDP(networkPacket *server.NetworkData) {
-	log.Println("setting position")
-
-	var data struct{
+	var data struct {
 		X int
 		Y int
 	}
 
 	server.DecodeNetworkDataBytes(networkPacket, self.Id(), &data)
-
-	log.Println("setting position", data.X, data.Y)
 
 	self.Position.Set(data.X, data.Y)
 }
