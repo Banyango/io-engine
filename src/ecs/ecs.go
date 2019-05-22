@@ -37,7 +37,7 @@ const (
 type GlobalType int
 const (
 	RawInputGlobalType = iota
-	InputGlobalType
+	NetworkInputGlobalType
 	RenderGlobalType
 	CreatorGlobalType
 	ServerGlobalType

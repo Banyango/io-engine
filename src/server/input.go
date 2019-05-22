@@ -7,25 +7,44 @@ import (
 )
 
 type InputSystem struct {
-
 }
 
-func (*InputSystem) Init() {
+func (self *InputSystem) Init() {
+
 	dynamic.Register("NetworkInputComponent", func() interface{} {
 		return &NetworkInputComponent{}
 	})
+
+	dynamic.Register("InputGlobal", func() interface{} {
+		return &NetworkInputGlobal{}
+	})
+
 }
 
-func (*InputSystem) AddToStorage(entity *ecs.Entity) {
+func (self *InputSystem) AddToStorage(entity *ecs.Entity) {
 
 }
 
-func (*InputSystem) RequiredComponentTypes() []ecs.ComponentType {
+func (self *InputSystem) RequiredComponentTypes() []ecs.ComponentType {
 	return []ecs.ComponentType{ecs.NetworkInputComponentType}
 }
 
-func (*InputSystem) UpdateSystem(delta float64, world *ecs.World) {
+func (self *InputSystem) UpdateSystem(delta float64, world *ecs.World) {
 
+}
+
+type NetworkId int
+
+type NetworkInputGlobal struct {
+	Inputs map[NetworkId]*NetworkInputComponent
+}
+
+func (*NetworkInputGlobal) Id() int {
+	return int(ecs.NetworkInputGlobalType)
+}
+
+func (self *NetworkInputGlobal) CreateGlobal(world *ecs.World) {
+	self.Inputs = map[NetworkId]*NetworkInputComponent{}
 }
 
 type NetworkInputComponent struct {
@@ -39,8 +58,6 @@ type NetworkInputComponent struct {
 	MousePressed map[int]bool
 	MouseUp      map[int]bool
 }
-
-
 
 func (self *NetworkInputComponent) Id() int {
 	return int(ecs.NetworkInputComponentType)

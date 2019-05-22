@@ -75,7 +75,7 @@ func MainLoopClient(self *ecs.World) {
 		self.TimeElapsed = self.TimeElapsed + delta
 
 		for self.TimeElapsed >= self.Interval {
-			self.Update(0.022)
+			self.Update(0.016)
 			self.TimeElapsed = self.TimeElapsed - self.Interval
 		}
 

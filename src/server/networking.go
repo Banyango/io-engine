@@ -210,7 +210,6 @@ func (self *ConnectionHandlerSystem) UpdateSystem(delta float64, world *World) {
 					fmt.Println("Error Writing to data channel player:", net.PlayerId)
 				}
 			}
-
 		}
 
 	}

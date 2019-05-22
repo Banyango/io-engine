@@ -32,12 +32,12 @@ func main() {
 	networkServer := new(server.ConnectionHandlerSystem)
 	networkInstance := new(server.NetworkInstanceDataCollectionSystem)
 
+	w.AddSystem(networkInstance)
+	w.AddSystem(networkServer)
 	w.AddSystem(playerState)
 	w.AddSystem(input)
-	w.AddSystem(collision)
 	w.AddSystem(movement)
-	w.AddSystem(networkServer)
-	w.AddSystem(networkInstance)
+	w.AddSystem(collision)
 
 	pm, err := ecs.NewPrefabManager(string(gameJson), w)
 
@@ -118,6 +118,7 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 	networkInputComponent := new(server.NetworkInputComponent)
 	entity.Components[int(ecs.NetworkInputComponentType)] = networkInputComponent
 
+
 	entity.Id = self.World.FetchAndIncrementId()
 	self.World.AddEntityToWorld(entity)
 
@@ -125,6 +126,9 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 
 	networkConnectionComponent.WSConnHandler = socker.NewClientConnection(conn)
 	networkConnectionComponent.PlayerId = global.FetchAndIncrementPlayerId()
+
+	inputGlobal := self.World.Globals[int(ecs.NetworkInputGlobalType)].(*server.NetworkInputGlobal)
+	inputGlobal.Inputs[server.NetworkId(networkConnectionComponent.PlayerId)] = networkInputComponent
 
 	fmt.Println("Client entityId: ", entity.Id, " Given playerId: ", networkConnectionComponent.PlayerId)
 
