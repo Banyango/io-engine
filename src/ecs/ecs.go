@@ -32,9 +32,11 @@ const (
 	NetworkConnectionComponentType
 	NetworkInstanceComponentType
 	NetworkInputComponentType
+	BufferComponentType
 )
 
 type GlobalType int
+
 const (
 	RawInputGlobalType = iota
 	NetworkInputGlobalType
@@ -57,8 +59,8 @@ func NewStorage() Storage {
 }
 
 /**
-	Entities
- */
+Entities
+*/
 
 type Entity struct {
 	Id         int64             `json:"id"`
@@ -73,7 +75,7 @@ func (entity Entity) Clone() Entity {
 Systems are behaviors
 
 Systems store a list of components
- */
+*/
 type System interface {
 	Init()
 	AddToStorage(entity *Entity)
@@ -82,16 +84,16 @@ type System interface {
 }
 
 /**
-	World
+World
 
-	This is the top level container for all logic.
+This is the top level container for all logic.
 
-	Systems  - Store behaviours and have storages.
-	Entities - Have components that get added to storages.
-	Storages - Have components that are a slice of all components needed.
-	Globals  - Are static components like input that dont really belong
-			   to one entity in particular.
- */
+Systems  - Store behaviours and have storages.
+Entities - Have components that get added to storages.
+Storages - Have components that are a slice of all components needed.
+Globals  - Are static components like input that dont really belong
+		   to one entity in particular.
+*/
 
 type World struct {
 	IdIndex       int64
@@ -103,15 +105,15 @@ type World struct {
 	TimeElapsed      int64
 	LastFrameTime    int64
 	CurrentFrameTime int64
+	CurrentTick      int64
 
 	Interval   int64
 	PrefabData *PrefabData
-	mux sync.Mutex
+	mux        sync.Mutex
 }
 
-
-
 func (w *World) Update(delta float64) {
+	w.CurrentTick++
 	for _, v := range w.Systems {
 		(*v).UpdateSystem(delta, w)
 	}
@@ -229,7 +231,7 @@ func (w *World) CreateEntityFromJson(jsonStr string) (e Entity, er error) {
 
 	components := data["components"]
 
-	var idJson struct{
+	var idJson struct {
 		Id string
 	}
 
@@ -253,7 +255,7 @@ func (w *World) CreateEntityFromJson(jsonStr string) (e Entity, er error) {
 			value := v.(Component)
 			entity.Components[value.Id()] = value
 		} else {
-			fmt.Println("Entity {",entity.Id,"}", " Component ignored =", string(component))
+			fmt.Println("Entity {", entity.Id, "}", " Component ignored =", string(component))
 		}
 
 	}
@@ -269,7 +271,7 @@ func (w *World) DoesEntityHaveAllRequiredComponentTypes(entity *Entity, required
 
 		found := false
 		for j := range requiredComponents {
-			if(int(requiredComponents[j]) == id) {
+			if (int(requiredComponents[j]) == id) {
 				found = true
 			}
 		}
@@ -325,7 +327,6 @@ func (w *World) addGlobal(global Global) {
 
 func (w *World) AddComponentToEntity(c Component, entity Entity) {
 	c.CreateComponent();
-
 	entity.Components[c.Id()] = c
 
 	for i := range w.Systems {

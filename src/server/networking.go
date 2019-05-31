@@ -117,6 +117,7 @@ Network Server System
 type ConnectionHandlerSystem struct {
 	Connections          Storage
 	NetworkInput	     Storage
+	deltaCounter 		 float64
 }
 
 func (self *ConnectionHandlerSystem) Init() {
@@ -181,6 +182,8 @@ func (self *ConnectionHandlerSystem) UpdateSystem(delta float64, world *World) {
 		udpBytesToWrite = gameStateBuffer.Bytes()
 	}
 
+	self.deltaCounter+=delta
+
 	for entity, _ := range self.Connections.Components {
 
 		input := (*self.NetworkInput.Components[entity]).(*NetworkInputComponent)
@@ -190,9 +193,6 @@ func (self *ConnectionHandlerSystem) UpdateSystem(delta float64, world *World) {
 
 		// only send data changes if the webrtc connection is open.
 		if net.IsDataChannelOpen {
-			if len(wsBytesToWrite) > 0 {
-				net.WSConnHandler.Write(wsBytesToWrite)
-			}
 
 			// handle webrtc messages
 			select {
@@ -204,6 +204,14 @@ func (self *ConnectionHandlerSystem) UpdateSystem(delta float64, world *World) {
 			default:
 			}
 
+			if len(wsBytesToWrite) > 0 {
+				net.WSConnHandler.Write(wsBytesToWrite)
+			}
+
+			if self.deltaCounter < 0.05 {
+				continue
+			}
+
 			if net.DataChannel != nil && len(udpBytesToWrite) > 0 {
 				err := net.DataChannel.Send(udpBytesToWrite)
 				if err != nil {
@@ -211,7 +219,10 @@ func (self *ConnectionHandlerSystem) UpdateSystem(delta float64, world *World) {
 				}
 			}
 		}
+	}
 
+	if self.deltaCounter > .05 {
+		self.deltaCounter = 0
 	}
 
 	global.Clear()
@@ -256,7 +267,9 @@ type NetworkData struct {
 	Data map[int][]byte
 }
 
+
 type WorldStatePacket struct {
+	Tick int64
 	Updates []NetworkData
 }
 

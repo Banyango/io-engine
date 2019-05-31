@@ -29,6 +29,7 @@ func main() {
 
 	rawInput := new(web.ClientInputSystem)
 	collision := new(game.CollisionSystem)
+	movement  := new(web.ClientMovementSystem)
 	netClient := new(web.NetworkedClientSystem)
 	debugClient := new(web.DebugSystem)
 	//clientData := new(client.ClientNetworkDataSystem)
@@ -37,6 +38,7 @@ func main() {
 
 	w.AddSystem(rawInput)
 	w.AddSystem(collision)
+	w.AddSystem(movement)
 	w.AddSystem(netClient)
 	w.AddSystem(debugClient)
 	//w.AddSystem(clientData)

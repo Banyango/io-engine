@@ -32,26 +32,26 @@ func (self *ClientInputSystem) UpdateSystem(delta float64, world *World) {
 }
 
 func Copy(inp *server.NetworkInputComponent, raw RawInputGlobal) {
-	inp.KeyUp = raw.keyUp
-	inp.KeyPressed = raw.keyPressed
-	inp.KeyDown = raw.keyDown
-	inp.MousePosition = raw.mousePosition
-	inp.MouseDown = raw.mouseDown
-	inp.MouseUp = raw.mouseUp
-	inp.MousePressed = raw.mousePressed
+	inp.KeyUp = raw.KeyUp
+	inp.KeyPressed = raw.KeyPressed
+	inp.KeyDown = raw.KeyDown
+	inp.MousePosition = raw.MousePosition
+	inp.MouseDown = raw.MouseDown
+	inp.MouseUp = raw.MouseUp
+	inp.MousePressed = raw.MousePressed
 }
 
 type RawInputGlobal struct {
 
-	keyDown map[server.KeyCode]bool
-	keyPressed map[server.KeyCode]bool
-	keyUp map[server.KeyCode]bool
+	KeyDown    map[server.KeyCode]bool
+	KeyPressed map[server.KeyCode]bool
+	KeyUp      map[server.KeyCode]bool
 
-	mousePosition math.Vector
+	MousePosition math.Vector
 
-	mouseDown map[int]bool
-	mousePressed map[int]bool
-	mouseUp map[int]bool
+	MouseDown    map[int]bool
+	MousePressed map[int]bool
+	MouseUp      map[int]bool
 
 	keyDownFunc js.Func
 	keyPressedFunc js.Func
@@ -68,13 +68,13 @@ func (self *RawInputGlobal) Id() int {
 
 func (self *RawInputGlobal) CreateGlobal(world *World) {
 
-	self.keyUp = map[server.KeyCode]bool{}
-	self.keyDown = map[server.KeyCode]bool{}
-	self.keyPressed = map[server.KeyCode]bool{}
-	self.mouseDown = map[int]bool{}
-	self.mousePressed = map[int]bool{}
-	self.mouseUp = map[int]bool{}
-	self.mousePosition = math.VectorZero()
+	self.KeyUp = map[server.KeyCode]bool{}
+	self.KeyDown = map[server.KeyCode]bool{}
+	self.KeyPressed = map[server.KeyCode]bool{}
+	self.MouseDown = map[int]bool{}
+	self.MousePressed = map[int]bool{}
+	self.MouseUp = map[int]bool{}
+	self.MousePosition = math.VectorZero()
 
 	go func() {
 		doc := js.Global().Get("document")
@@ -84,7 +84,7 @@ func (self *RawInputGlobal) CreateGlobal(world *World) {
 
 			self.mouseMoveFunc = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 				e := args[0]
-				self.mousePosition.Set(e.Get("clientX").Float(), e.Get("clientY").Float())
+				self.MousePosition.Set(e.Get("clientX").Float(), e.Get("clientY").Float())
 				return nil;
 			})
 			defer self.mouseMoveFunc.Release()
@@ -97,8 +97,8 @@ func (self *RawInputGlobal) CreateGlobal(world *World) {
 				keyCode, err := KeyFromString(e.Get("keyCode").String())
 
 				if err == nil {
-					self.keyDown[keyCode] = true
-					self.keyPressed[keyCode] = true
+					self.KeyDown[keyCode] = true
+					self.KeyPressed[keyCode] = true
 				}
 
 				return nil;
@@ -116,8 +116,8 @@ func (self *RawInputGlobal) CreateGlobal(world *World) {
 				keyCode, err := KeyFromString(e.Get("keyCode").String())
 
 				if err == nil {
-					self.keyPressed[keyCode] = false
-					self.keyUp[keyCode] = true
+					self.KeyPressed[keyCode] = false
+					self.KeyUp[keyCode] = true
 				}
 
 				return nil;
@@ -135,21 +135,31 @@ func (self *RawInputGlobal) CreateGlobal(world *World) {
 }
 
 func (self *RawInputGlobal) Reset() {
-	self.mousePressed = nil
-	self.mouseDown = nil
-	self.keyDown = map[server.KeyCode]bool{}
-	self.keyPressed = map[server.KeyCode]bool{}
-	self.keyUp = map[server.KeyCode]bool{}
+	self.MousePressed = nil
+	self.MouseDown = nil
+	self.KeyDown = map[server.KeyCode]bool{}
+	self.KeyPressed = map[server.KeyCode]bool{}
+	self.KeyUp = map[server.KeyCode]bool{}
+}
+
+func (self *RawInputGlobal) AnyKeyPressed() bool {
+	for _, i := range self.KeyPressed {
+		if i {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (self *RawInputGlobal) ToNetworkInput() *server.NetworkInput {
 	return &server.NetworkInput{
-		Up:self.keyPressed[server.Up],
-		Down:self.keyPressed[server.Down],
-		Right:self.keyPressed[server.Right],
-		Left:self.keyPressed[server.Left],
-		X:self.keyPressed[server.X],
-		C:self.keyPressed[server.C],
+		Up:self.KeyPressed[server.Up],
+		Down:self.KeyPressed[server.Down],
+		Right:self.KeyPressed[server.Right],
+		Left:self.KeyPressed[server.Left],
+		X:self.KeyPressed[server.X],
+		C:self.KeyPressed[server.C],
 	}
 }
 
