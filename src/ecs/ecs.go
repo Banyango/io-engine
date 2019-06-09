@@ -16,9 +16,8 @@ type Component interface {
 	Clone() Component
 }
 
-type Global interface {
-	Id() int
-	CreateGlobal(world *World)
+type CompareComponent interface {
+	AreEquals(component Component) bool
 }
 
 type ComponentType int
@@ -29,21 +28,9 @@ const (
 	StateComponentType
 	CircleComponentType
 	ArcadeMovementComponentType
-	NetworkConnectionComponentType
+	CorrectionComponentType
 	NetworkInstanceComponentType
-	NetworkInputComponentType
 	BufferComponentType
-)
-
-type GlobalType int
-
-const (
-	RawInputGlobalType = iota
-	NetworkInputGlobalType
-	RenderGlobalType
-	CreatorGlobalType
-	ServerGlobalType
-	ClientGlobalType
 )
 
 type Storage struct {
@@ -67,8 +54,31 @@ type Entity struct {
 	Components map[int]Component `json:"components"`
 }
 
-func (entity Entity) Clone() Entity {
-	return entity
+func (entity Entity) Clone() *Entity {
+
+	result := Entity{}
+	result.Id = entity.Id
+
+	result.Components = map[int]Component{}
+
+	for i, val := range entity.Components {
+		result.Components[i] = val.Clone()
+	}
+
+	return &result
+}
+
+func (entity *Entity) CompareTo(other *Entity) (same bool){
+
+	for i, comp := range entity.Components {
+		if val, ok := comp.(CompareComponent); ok {
+			if !val.AreEquals(other.Components[i]) {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 /**
@@ -77,10 +87,11 @@ Systems are behaviors
 Systems store a list of components
 */
 type System interface {
-	Init()
+	Init(w *World)
 	AddToStorage(entity *Entity)
 	RequiredComponentTypes() []ComponentType
 	UpdateSystem(delta float64, world *World)
+	RemoveFromStorage(entity *Entity)
 }
 
 /**
@@ -95,12 +106,26 @@ Globals  - Are static components like input that dont really belong
 		   to one entity in particular.
 */
 
+const (
+	FIXED_DELTA = 0.016
+)
+
 type World struct {
-	IdIndex       int64
+	IdIndex int64
+
 	Systems       []*System
 	RenderSystems []*System
-	Entities      map[int64]*Entity
-	Globals       map[int]Global
+
+	Entities map[int64]*Entity
+
+	Cache []map[int64]*Entity
+	ValidatedBuffer int32
+	IsResimulating bool
+
+	ToSpawn []Entity
+	ToDestroy []int64
+
+	Input InputController
 
 	TimeElapsed      int64
 	LastFrameTime    int64
@@ -114,9 +139,12 @@ type World struct {
 
 func (w *World) Update(delta float64) {
 	w.CurrentTick++
+
 	for _, v := range w.Systems {
 		(*v).UpdateSystem(delta, w)
 	}
+
+	w.CacheState()
 }
 
 func (self *World) Render() {
@@ -129,7 +157,7 @@ func NewWorld() *World {
 	world := new(World)
 
 	world.Entities = map[int64]*Entity{}
-	world.Globals = map[int]Global{}
+	world.Input = InputController{map[PlayerId]*Input{0: NewInput()}}
 
 	world.Interval = 16
 
@@ -140,7 +168,7 @@ func (w *World) AddSystem(system System) {
 	owned := &system
 	w.Systems = append(w.Systems, owned)
 	fmt.Println("Adding System: ", reflect.TypeOf(system))
-	(*owned).Init()
+	(*owned).Init(w)
 	fmt.Println("initialized: ", reflect.TypeOf(system))
 }
 
@@ -148,55 +176,8 @@ func (w *World) AddRenderer(system System) {
 	owned := &system
 	w.RenderSystems = append(w.RenderSystems, owned)
 	fmt.Println("Adding Renderer: ", reflect.TypeOf(system))
-	(*owned).Init()
+	(*owned).Init(w)
 	fmt.Println("initialized: ", reflect.TypeOf(system))
-}
-
-func (w *World) CreateAndAddGlobalsFromJson(jsonStr string) error {
-	var data []json.RawMessage
-
-	err := json.Unmarshal([]byte(jsonStr), &data)
-
-	if err != nil {
-		fmt.Println("error: ", err)
-		return err
-	}
-
-	for i := range data {
-		e, err := w.createGlobalFromJson(string(data[i]))
-
-		if e == nil {
-			fmt.Println("Global ignored: ", string(data[i]))
-			continue;
-		}
-
-		fmt.Println("Creating global: ", reflect.TypeOf(e))
-
-		if err != nil {
-			return err
-		}
-
-		w.addGlobal(e);
-	}
-
-	return nil
-}
-
-func (w *World) createGlobalFromJson(jsonStr string) (c Global, er error) {
-
-	var comp dynamic.Type
-
-	err := json.Unmarshal([]byte(jsonStr), &comp)
-
-	if err != nil {
-		fmt.Println("Error creating global ", jsonStr)
-		return nil, nil
-	}
-
-	v := comp.Value()
-
-	return v.(Global), nil
-
 }
 
 func (w *World) CreateMultipleEntitiesFromJson(jsonStr string) (e []*Entity, er error) {
@@ -284,6 +265,16 @@ func (w *World) DoesEntityHaveAllRequiredComponentTypes(entity *Entity, required
 	return count == len(requiredComponents)
 }
 
+// queues entity for spawning
+func (w *World) Spawn(entity Entity) {
+	w.ToSpawn = append(w.ToSpawn, entity)
+}
+
+// queues entity for destruction
+func (w *World) Destroy(entityId int64) {
+	w.ToDestroy = append(w.ToDestroy, entityId)
+}
+
 func (w *World) AddEntityToWorld(entity Entity) {
 
 	for i := range entity.Components {
@@ -310,19 +301,10 @@ func (w *World) AddEntityToWorld(entity Entity) {
 }
 
 func (w *World) FetchAndIncrementId() int64 {
-	w.mux.Lock()
-
 	temp := w.IdIndex
 
 	w.IdIndex++
-
-	w.mux.Unlock()
 	return temp
-}
-
-func (w *World) addGlobal(global Global) {
-	w.Globals[global.Id()] = global
-	global.CreateGlobal(w)
 }
 
 func (w *World) AddComponentToEntity(c Component, entity Entity) {
@@ -343,5 +325,78 @@ func (w *World) AddComponentToEntity(c Component, entity Entity) {
 		if w.DoesEntityHaveAllRequiredComponentTypes(&entity, system.RequiredComponentTypes()) {
 			system.AddToStorage(&entity)
 		}
+	}
+}
+
+func (w *World) RemoveEntity(id int64) {
+
+	entity := w.Entities[id]
+
+	for i := range w.Systems {
+		system := *w.Systems[i]
+
+		if w.DoesEntityHaveAllRequiredComponentTypes(entity, system.RequiredComponentTypes()) {
+			system.RemoveFromStorage(entity)
+		}
+	}
+
+	for i := range w.RenderSystems {
+		system := *w.RenderSystems[i]
+
+		if w.DoesEntityHaveAllRequiredComponentTypes(entity, system.RequiredComponentTypes()) {
+			system.AddToStorage(entity)
+		}
+	}
+
+	w.Entities = nil
+}
+
+func (w *World) ResetToTick(tick int64) {
+
+	diff := int(w.CurrentTick - tick)
+
+	if (len(w.Cache)- 1) - int(diff) > 0 {
+
+		w.Entities = w.Cache[(len(w.Cache)- 1) - diff]
+
+		mask := int32(0)
+		for i := 0; i < diff; i++ {
+			mask = mask << 1
+		}
+
+		w.ValidatedBuffer = w.ValidatedBuffer | mask
+	}
+
+}
+
+func (w *World) Resimulate (tick int64) {
+
+	diff := int(w.CurrentTick - tick)
+
+	w.IsResimulating = true
+	for i := 0; i < diff; i++ {
+		w.Update(FIXED_DELTA)
+	}
+	w.IsResimulating = false
+
+}
+
+func (w *World) CacheState() {
+	clone := map[int64]*Entity{}
+
+	for i, entity := range w.Entities {
+		clone[i] = entity.Clone()
+	}
+
+	w.Cache = append(w.Cache, clone)
+
+	w.ValidatedBuffer = w.ValidatedBuffer << 1
+}
+
+func (w *World) CompareEntitiesAtTick(tick int64, tempEntity *Entity) (same bool) {
+	diff := int(w.CurrentTick - tick)
+
+	if (len(w.Cache)-1) - diff > 0 {
+		w.Cache[(len(w.Cache)-1) - diff][tempEntity.Id].CompareTo(tempEntity)
 	}
 }

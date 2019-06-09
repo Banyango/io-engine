@@ -12,11 +12,15 @@ type DebugSystem struct {
 	domParent          js.Value
 }
 
-func (self *DebugSystem) Init() {
+func (self *DebugSystem) Init(w *ecs.World) {
 	self.domParent = js.Global().Get("document").Call("getElementById", "debugSection")
 }
 
 func (self *DebugSystem) AddToStorage(entity *ecs.Entity) {
+
+}
+
+func (self *DebugSystem) RemoveFromStorage(entity *ecs.Entity) {
 
 }
 

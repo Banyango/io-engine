@@ -1,12 +1,6 @@
 {
   "name": "test",
   "version": "0.0.1",
-  "globals" : [
-    {"Type":"RenderGlobal", "CanvasElementId":"mycanvas", "Width":600, "Height":500},
-    {"Type":"RawInputGlobal"},
-    {"Type":"InputGlobal"},
-    {"Type":"ServerGlobal"}
-  ],
   "prefabs": {
     "ConnectedClient" : {
       "id": "0",

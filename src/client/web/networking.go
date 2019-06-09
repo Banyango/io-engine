@@ -18,11 +18,14 @@ import (
 type ConnectionStateType int
 
 type NetworkedClientSystem struct {
+
+	entities Storage
+
 	PlayerId    int
 	ConnHandler *socker.SockerClient
 
 	done chan struct{}
-	data chan server.BufferedEntityPacket
+	data chan server.WorldStatePacket
 	addr string
 
 	doc      js.Value
@@ -34,15 +37,14 @@ type NetworkedClientSystem struct {
 	WebRTCConnection js.Value
 
 	IsConnected      bool
-	Packets          []server.BufferedEntityPacket
-	Buffered         []server.EntityChange
+	Packets          []server.WorldStatePacket
 	State            server.WorldStatePacket
 	mux              sync.Mutex
 	WorldStatePacket []server.WorldStatePacket
 }
 
 
-func (self *NetworkedClientSystem) Init() {
+func (self *NetworkedClientSystem) Init(w *World) {
 
 	self.ConnHandler = socker.NewClient()
 
@@ -59,11 +61,6 @@ func (self *NetworkedClientSystem) Init() {
 		self.PlayerId = int(packet.PlayerId)
 
 		js.Global().Get("console").Call("log", "Creating WebRTC connection...")
-
-		self.SetupWebRTC()
-
-		//create a fake packet with the buffered changes
-		self.Buffered = packet.BufferedChanges
 
 		log(fmt.Sprintln("Player Id", self.PlayerId))
 
@@ -92,13 +89,13 @@ func (self *NetworkedClientSystem) Init() {
 
 	// handle normal TCP packets.
 	self.ConnHandler.Add(func(message []byte) bool {
-		var packet server.BufferedEntityPacket
+		var packet server.ServerConnectionHandshakePacket
 
 		if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
 			fmt.Println("Error in Packet",err)
 		}
 
-		self.Packets = append(self.Packets, packet)
+		self.PlayerId = int(packet.PlayerId)
 
 		return false
 	})
@@ -255,90 +252,51 @@ func (self *NetworkedClientSystem) AddToStorage(entity *Entity) {
 
 }
 
+func (self *NetworkedClientSystem) RemoveFromStorage(entity *Entity) {
+
+}
+
 func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
-	// Grab the messages from the channel
-	// If there is one process it. If not continue client side prediction.
 
-	if len(self.Buffered) > 0 {
-		for j := range self.Buffered {
-			change := self.Buffered[j]
-			if change.Type == server.InstantiatedEntityChangeType {
-
-				prefabIdToCreate := self.GetPrefabId(change)
-
-				js.Global().Get("console").Call("log", "Creating buffered entity: ", prefabIdToCreate)
-
-				if entity, err := world.PrefabData.CreatePrefab(prefabIdToCreate); err != nil {
-					fmt.Println(err)
-				} else {
-
-					// todo add network instance component??
-					entity.Id = int64(change.NetworkId)
-
-					world.AddEntityToWorld(entity)
-				}
-			}
-		}
-		self.Buffered = nil
-	}
-
-	if len(self.Packets) > 0 {
-		message := self.Packets[len(self.Packets)-1]
-		for j := range message.Updates {
-			change := message.Updates[j]
-			if change.Type == server.InstantiatedEntityChangeType {
-
-				prefabIdToCreate := self.GetPrefabId(change)
-
-				js.Global().Get("console").Call("log", "Creating entity: ", prefabIdToCreate, " networkId: ", change.NetworkId)
-
-				if entity, err := world.PrefabData.CreatePrefab(prefabIdToCreate); err != nil {
-					fmt.Println(err)
-				} else {
-					entity.Id = int64(change.NetworkId)
-					world.AddEntityToWorld(entity)
-				}
-			}
-
-			// validate our state at time whatever is equal to client side.
-
-			// was there a difference
-
-			// yes - resimulate the position up till now using our input buffer.
-
-		}
-		self.Packets = self.Packets[:0]
+	if world.IsResimulating {
+		return
 	}
 
 	if len(self.WorldStatePacket) > 0 {
+		for _, val := range self.WorldStatePacket {
 
-		// todo add timestamp to make sure this is the latest
-		packet := self.WorldStatePacket[len(self.WorldStatePacket)-1]
+			for _, created := range val.Created {
+				world.AddEntityToWorld(*created.DeserializeNewEntity(world))
+			}
 
-		if len(packet.Updates) > 0 {
-			for _, val := range packet.Updates {
+			for _, destroyed := range val.Destroyed {
+				world.RemoveEntity(int64(destroyed))
+			}
 
-				entity := world.Entities[int64(val.NetworkId)]
-				for j := range val.Data {
-					if component, ok := entity.Components[j]; ok {
-						if readSync, ok2 := component.(server.ReadSyncUDP); ok2 {
-							readSync.ReadUDP(&val)
-						}
-					} else {
-						log("Something went wrong client entity doesn't have component.")
-					}
+			resimulateRequired := false
+			for _, update := range val.Updates {
+				temp := update.DeserializeNewEntity(world)
+				if !world.CompareEntitiesAtTick(val.Tick, temp) {
+					resimulateRequired = true
+					break
 				}
 			}
+
+			if resimulateRequired {
+				world.ResetToTick(val.Tick)
+
+				for _, update := range val.Updates {
+					update.UpdateEntity(world.Entities[int64(update.NetworkId)])
+				}
+
+				world.Resimulate(val.Tick)
+			}
 		}
-
-		self.WorldStatePacket = self.WorldStatePacket[:0]
-
 	}
 
 	if self.IsDataChannelConnected() {
-		inputGlobal := world.Globals[RawInputGlobalType].(*RawInputGlobal)
 
-		jsBuf := js.TypedArrayOf(inputGlobal.ToNetworkInput().ToBytes())
+		jsBuf := js.TypedArrayOf(world.Input.Player[0].ToBytes())
 
 		//log("sending input" + jsBuf.String())
 		self.WebRTCConnection.Get("sendChannel").Call("send", jsBuf)
@@ -364,9 +322,6 @@ type ClientNetworkGlobal struct {
 	Packets []server.WorldStatePacket
 }
 
-func (*ClientNetworkGlobal) Id() int {
-	return ClientGlobalType
-}
 
 func (self *ClientNetworkGlobal) CreateGlobal(world *World) {
 	self.Packets = []server.WorldStatePacket{}

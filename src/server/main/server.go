@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/Banyango/socker"
-	"github.com/gorilla/websocket"
 	"io-engine-backend/src/ecs"
 	"io-engine-backend/src/game"
 	"io-engine-backend/src/server"
@@ -25,17 +23,9 @@ func main() {
 	fmt.Println("Creating World.")
 	w := ecs.NewWorld()
 
-	input := new(server.InputSystem)
 	collision := new(game.CollisionSystem)
 	movement := new(game.KeyboardMovementSystem)
-	playerState := new(server.PlayerStateSystem)
-	networkServer := new(server.ConnectionHandlerSystem)
-	networkInstance := new(server.NetworkInstanceDataCollectionSystem)
 
-	w.AddSystem(networkInstance)
-	w.AddSystem(networkServer)
-	w.AddSystem(playerState)
-	w.AddSystem(input)
 	w.AddSystem(movement)
 	w.AddSystem(collision)
 
@@ -50,11 +40,11 @@ func main() {
 	w.CurrentFrameTime = time.Now().UnixNano() / int64(time.Millisecond)
 	w.TimeElapsed = 0
 
-	go mainLoop(w)
+	gameServer := server.Server{World: w}
 
-	gameServer := Server{World: w}
+	go mainLoop(&gameServer)
 
-	http.HandleFunc("/connect", gameServer.ws)
+	http.HandleFunc("/connect", gameServer.Ws)
 	http.Handle("/", http.FileServer(http.Dir("./src/client/web/main/")))
 	http.HandleFunc("/game.json", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "./game.json")
@@ -65,99 +55,23 @@ func main() {
 	}
 }
 
-type Server struct {
-	World *ecs.World
-}
-
-func mainLoop(w *ecs.World) {
+func mainLoop(gameServer *server.Server) {
 	for true {
 
-		w.LastFrameTime = w.CurrentFrameTime
+		gameServer.World.LastFrameTime = gameServer.World.CurrentFrameTime
 
-		w.CurrentFrameTime = time.Now().UnixNano() / int64(time.Millisecond)
+		gameServer.World.CurrentFrameTime = time.Now().UnixNano() / int64(time.Millisecond)
 
-		delta := w.CurrentFrameTime - w.LastFrameTime
+		delta := gameServer.World.CurrentFrameTime - gameServer.World.LastFrameTime
 
-		w.TimeElapsed = w.TimeElapsed + delta
+		gameServer.World.TimeElapsed = gameServer.World.TimeElapsed + delta
 
-		for w.TimeElapsed >= w.Interval {
-			w.Update(0.016)
-			w.TimeElapsed = w.TimeElapsed - w.Interval
+		for gameServer.World.TimeElapsed >= gameServer.World.Interval {
+			gameServer.World.Update(0.016)
+			gameServer.SendNetworkData(0.016)
+			gameServer.World.TimeElapsed = gameServer.World.TimeElapsed - gameServer.World.Interval
 		}
 	}
 }
 
-func (self *Server) ws(writer http.ResponseWriter, request *http.Request)  {
-	upgrader := websocket.Upgrader{}
-
-	fmt.Println("Client is connecting..")
-
-	conn, err := upgrader.Upgrade(writer, request, nil)
-
-	if err != nil {
-		fmt.Println("Error Occurred")
-		return
-	}
-
-	self.createClientConnection(conn)
-
-}
-
-func (self *Server) createClientConnection(conn *websocket.Conn) {
-
-	entity, err := self.World.PrefabData.CreatePrefab(0)
-
-	if err != nil {
-		fmt.Println("Error Occurred Creating Player Prefab")
-		return
-	}
-
-	networkConnectionComponent := new(server.NetworkConnectionComponent)
-	entity.Components[int(ecs.NetworkConnectionComponentType)] = networkConnectionComponent
-
-	networkInputComponent := new(server.NetworkInputComponent)
-	entity.Components[int(ecs.NetworkInputComponentType)] = networkInputComponent
-
-
-	entity.Id = self.World.FetchAndIncrementId()
-	self.World.AddEntityToWorld(entity)
-
-	global := self.World.Globals[ecs.ServerGlobalType].(*server.ServerGlobal)
-
-	networkConnectionComponent.WSConnHandler = socker.NewClientConnection(conn)
-	networkConnectionComponent.PlayerId = global.FetchAndIncrementPlayerId()
-
-	inputGlobal := self.World.Globals[int(ecs.NetworkInputGlobalType)].(*server.NetworkInputGlobal)
-	inputGlobal.Inputs[server.NetworkId(networkConnectionComponent.PlayerId)] = networkInputComponent
-
-	fmt.Println("Client entityId: ", entity.Id, " Given playerId: ", networkConnectionComponent.PlayerId)
-
-	networkConnectionComponent.WSConnHandler.Add(func(message []byte) bool {
-		fmt.Println("Sending Buffered Entities to -> player ", networkConnectionComponent.PlayerId)
-		networkConnectionComponent.SendBufferedEntites(global.BufferedEntityChanges)
-		return true
-	})
-
-	// setup webrtc connection send offer
-	networkConnectionComponent.WSConnHandler.Add(func(message []byte) bool {
-		fmt.Println("Setting up webrtc data channel -> player ", networkConnectionComponent.PlayerId)
-		networkConnectionComponent.ConnectToDataChannel(message)
-		return true
-	})
-
-	networkConnectionComponent.WSConnHandler.Add(func(message []byte) bool {
-		fmt.Println("Handling messages -> player", networkConnectionComponent.PlayerId)
-		networkConnectionComponent.HandleSignal(message)
-		return networkConnectionComponent.IsDataChannelOpen
-	})
-
-	networkConnectionComponent.WSConnHandler.Add(func(message []byte) bool {
-		networkConnectionComponent.GameMessage(message)
-		return false
-	})
-
-	go networkConnectionComponent.WSConnHandler.ReadPump()
-	go networkConnectionComponent.WSConnHandler.WritePump()
-
-}
 

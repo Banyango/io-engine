@@ -1,58 +1,12 @@
 package web
 
 import (
-	"github.com/goburrow/dynamic"
-	"io-engine-backend/src/math"
-	"io-engine-backend/src/server"
 	. "io-engine-backend/src/ecs"
 	"strconv"
 	"syscall/js"
 )
 
 type ClientInputSystem struct {
-
-}
-
-func (self *ClientInputSystem) Init() {
-	dynamic.Register("RawInputGlobal", func() interface{} {
-		return &RawInputGlobal{}
-	})
-}
-
-func (self *ClientInputSystem) RequiredComponentTypes() []ComponentType {
-	return []ComponentType{RawInputGlobalType}
-}
-
-func (self *ClientInputSystem) AddToStorage(entity *Entity) {
-
-}
-
-func (self *ClientInputSystem) UpdateSystem(delta float64, world *World) {
-
-}
-
-func Copy(inp *server.NetworkInputComponent, raw RawInputGlobal) {
-	inp.KeyUp = raw.KeyUp
-	inp.KeyPressed = raw.KeyPressed
-	inp.KeyDown = raw.KeyDown
-	inp.MousePosition = raw.MousePosition
-	inp.MouseDown = raw.MouseDown
-	inp.MouseUp = raw.MouseUp
-	inp.MousePressed = raw.MousePressed
-}
-
-type RawInputGlobal struct {
-
-	KeyDown    map[server.KeyCode]bool
-	KeyPressed map[server.KeyCode]bool
-	KeyUp      map[server.KeyCode]bool
-
-	MousePosition math.Vector
-
-	MouseDown    map[int]bool
-	MousePressed map[int]bool
-	MouseUp      map[int]bool
-
 	keyDownFunc js.Func
 	keyPressedFunc js.Func
 	keyUpFunc js.Func
@@ -62,20 +16,7 @@ type RawInputGlobal struct {
 	mouseUpFunc js.Func
 }
 
-func (self *RawInputGlobal) Id() int {
-	return int(RawInputGlobalType)
-}
-
-func (self *RawInputGlobal) CreateGlobal(world *World) {
-
-	self.KeyUp = map[server.KeyCode]bool{}
-	self.KeyDown = map[server.KeyCode]bool{}
-	self.KeyPressed = map[server.KeyCode]bool{}
-	self.MouseDown = map[int]bool{}
-	self.MousePressed = map[int]bool{}
-	self.MouseUp = map[int]bool{}
-	self.MousePosition = math.VectorZero()
-
+func (self *ClientInputSystem) Init(world *World) {
 	go func() {
 		doc := js.Global().Get("document")
 
@@ -84,7 +25,7 @@ func (self *RawInputGlobal) CreateGlobal(world *World) {
 
 			self.mouseMoveFunc = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 				e := args[0]
-				self.MousePosition.Set(e.Get("clientX").Float(), e.Get("clientY").Float())
+				world.Input.Player[0].MousePosition.Set(e.Get("clientX").Float(), e.Get("clientY").Float())
 				return nil;
 			})
 			defer self.mouseMoveFunc.Release()
@@ -97,8 +38,8 @@ func (self *RawInputGlobal) CreateGlobal(world *World) {
 				keyCode, err := KeyFromString(e.Get("keyCode").String())
 
 				if err == nil {
-					self.KeyDown[keyCode] = true
-					self.KeyPressed[keyCode] = true
+					world.Input.Player[0].KeyDown[keyCode] = true
+					world.Input.Player[0].KeyPressed[keyCode] = true
 				}
 
 				return nil;
@@ -116,8 +57,8 @@ func (self *RawInputGlobal) CreateGlobal(world *World) {
 				keyCode, err := KeyFromString(e.Get("keyCode").String())
 
 				if err == nil {
-					self.KeyPressed[keyCode] = false
-					self.KeyUp[keyCode] = true
+					world.Input.Player[0].KeyPressed[keyCode] = false
+					world.Input.Player[0].KeyUp[keyCode] = true
 				}
 
 				return nil;
@@ -134,43 +75,30 @@ func (self *RawInputGlobal) CreateGlobal(world *World) {
 	}()
 }
 
-func (self *RawInputGlobal) Reset() {
-	self.MousePressed = nil
-	self.MouseDown = nil
-	self.KeyDown = map[server.KeyCode]bool{}
-	self.KeyPressed = map[server.KeyCode]bool{}
-	self.KeyUp = map[server.KeyCode]bool{}
+func (self *ClientInputSystem) RemoveFromStorage(entity *Entity) {
+
 }
 
-func (self *RawInputGlobal) AnyKeyPressed() bool {
-	for _, i := range self.KeyPressed {
-		if i {
-			return true
-		}
-	}
-
-	return false
+func (self *ClientInputSystem) RequiredComponentTypes() []ComponentType {
+	return []ComponentType{}
 }
 
-func (self *RawInputGlobal) ToNetworkInput() *server.NetworkInput {
-	return &server.NetworkInput{
-		Up:self.KeyPressed[server.Up],
-		Down:self.KeyPressed[server.Down],
-		Right:self.KeyPressed[server.Right],
-		Left:self.KeyPressed[server.Left],
-		X:self.KeyPressed[server.X],
-		C:self.KeyPressed[server.C],
-	}
+func (self *ClientInputSystem) AddToStorage(entity *Entity) {
+
 }
 
-func KeyFromString(s string) (server.KeyCode, error) {
+func (self *ClientInputSystem) UpdateSystem(delta float64, world *World) {
+
+}
+
+func KeyFromString(s string) (KeyCode, error) {
 	keycode, err := strconv.Atoi(s)
 
 	if err != nil {
 		return -1, err
 	}
 
-	return server.KeyCode(keycode), err
+	return KeyCode(keycode), err
 }
 
 

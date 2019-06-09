@@ -57,12 +57,6 @@ func NewPrefabManager (jsonGameData string, world *World) (*PrefabData, error) {
 		Prefabs: map[int]Entity{},
 	}
 
-	// Create Globals
-	if err := world.CreateAndAddGlobalsFromJson(
-			string(prefabManager.Globals)); err != nil {
-		return nil, err
-	}
-
 	// Create prefabs
 	for i := range prefabManager.Prefabs {
 		prefab := prefabManager.Prefabs[i]

@@ -13,7 +13,7 @@ type KeyboardMovementSystem struct {
 	networkInstance     Storage
 }
 
-func (self *KeyboardMovementSystem) Init() {
+func (self *KeyboardMovementSystem) Init(w *World) {
 
 	dynamic.Register("ArcadeMovementComponent", func() interface{} {
 		return &ArcadeMovementComponent{}
@@ -32,6 +32,15 @@ func (self *KeyboardMovementSystem) UpdateFrequency() int {
 	return 60
 }
 
+func (self *KeyboardMovementSystem) RemoveFromStorage(entity *Entity) {
+	storages := map[int]*Storage{
+		int(ArcadeMovementComponentType): &self.arcadeComponents,
+		int(CollisionComponentType):      &self.collisionComponents,
+		int(NetworkInstanceComponentType):      &self.networkInstance,
+	}
+	RemoveComponentsFromStorage(entity, storages)
+}
+
 func (self *KeyboardMovementSystem) AddToStorage(entity *Entity) {
 	for k := range entity.Components {
 		component := entity.Components[k].(Component)
@@ -48,8 +57,6 @@ func (self *KeyboardMovementSystem) AddToStorage(entity *Entity) {
 
 func (self *KeyboardMovementSystem) UpdateSystem(delta float64, world *World) {
 
-	global := world.Globals[int(NetworkInputGlobalType)].(*server.NetworkInputGlobal)
-
 	for entity, _ := range self.collisionComponents.Components {
 
 		arcade := (*self.arcadeComponents.Components[entity]).(*ArcadeMovementComponent)
@@ -58,30 +65,28 @@ func (self *KeyboardMovementSystem) UpdateSystem(delta float64, world *World) {
 
 		direction := math.NewVector(float64(0), float64(0))
 
-		input := global.Inputs[server.NetworkId(net.Data.OwnerId)]
+		input := world.Input.Player[PlayerId(net.Data.OwnerId)]
 
-		if input != nil {
-			if input.AnyKeyPressed() {
+		if input.AnyKeyPressed() {
 
-				if input.KeyPressed[server.Up] {
-					direction = direction.Add(math.VectorUp())
-				}
-
-				if input.KeyPressed[server.Down] {
-					direction = direction.Add(math.VectorDown())
-				}
-
-				if input.KeyPressed[server.Left] {
-					direction = direction.Add(math.VectorRight())
-				}
-
-				if input.KeyPressed[server.Right] {
-					direction = direction.Add(math.VectorLeft())
-				}
-
-				collider.Velocity = collider.Velocity.Add(direction.Scale(arcade.Speed))
-
+			if input.KeyPressed[Up] {
+				direction = direction.Add(math.VectorUp())
 			}
+
+			if input.KeyPressed[Down] {
+				direction = direction.Add(math.VectorDown())
+			}
+
+			if input.KeyPressed[Left] {
+				direction = direction.Add(math.VectorRight())
+			}
+
+			if input.KeyPressed[Right] {
+				direction = direction.Add(math.VectorLeft())
+			}
+
+			collider.Velocity = collider.Velocity.Add(direction.Scale(arcade.Speed))
+
 		}
 
 		collider.Velocity = collider.Velocity.Add(arcade.Gravity).Scale(arcade.Drag).Clamp(arcade.MaxSpeed.Neg(), arcade.MaxSpeed)
@@ -95,6 +100,14 @@ type ArcadeMovementComponent struct {
 	Gravity  math.Vector
 }
 
+func (self *ArcadeMovementComponent) AreEquals(component Component) bool {
+	if val, ok := component.(*ArcadeMovementComponent); ok {
+		return val.Speed == self.Speed
+	} else {
+		return false
+	}
+}
+
 func (self *ArcadeMovementComponent) Id() int {
 	return int(ArcadeMovementComponentType)
 }
@@ -106,6 +119,8 @@ func (self *ArcadeMovementComponent) CreateComponent() {
 func (self *ArcadeMovementComponent) DestroyComponent() {
 
 }
+
+
 
 func (self *ArcadeMovementComponent) Clone() Component {
 	component := new(ArcadeMovementComponent)

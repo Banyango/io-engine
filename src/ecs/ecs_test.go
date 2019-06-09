@@ -13,7 +13,7 @@ func TestCreateEntityFromJson(t *testing.T) {
 		"id":0, 
 		"components":[
 			{"Type":"PositionComponent", "Position":[0,1] },
-			{"Type":"CollisionComponent", "Size":[0,1] }
+			{"Type":"CollisionComponent", "Size":[0,1], "Velocity":[0,0] }
 		]
 	}`
 
@@ -97,27 +97,6 @@ func TestWorld_AddEntityToWorld(t *testing.T) {
 
 	// todo this needs to test that storage only has one entity
 	//assert.Equal(t,system.)
-}
-
-func TestCreateGlobalFromJson(t *testing.T) {
-
-	globals := `[
-		{"Type":"RenderGlobal", "CanvasElementId":"mycanvas"},
-		{"Type":"RawInputGlobal"}
-	]`
-
-	w := ecs.NewWorld()
-
-	w.AddSystem(new(game.CollisionSystem))
-	//w.AddSystem(new(game.CanvasRenderSystem))
-	//w.AddSystem(new(game.InputSystem))
-
-	err := w.CreateAndAddGlobalsFromJson(globals)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, w.Globals)
-	assert.NotNil(t, 2, len(w.Globals))
-
 }
 
 func TestStorage(t *testing.T) {

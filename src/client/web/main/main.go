@@ -27,7 +27,7 @@ func main() {
 	fmt.Println("Creating World.")
 	w := ecs.NewWorld()
 
-	rawInput := new(web.ClientInputSystem)
+	input := new(web.ClientInputSystem)
 	collision := new(game.CollisionSystem)
 	movement  := new(web.ClientMovementSystem)
 	netClient := new(web.NetworkedClientSystem)
@@ -36,7 +36,7 @@ func main() {
 
 	renderer := new(web.CanvasRenderSystem)
 
-	w.AddSystem(rawInput)
+	w.AddSystem(input)
 	w.AddSystem(collision)
 	w.AddSystem(movement)
 	w.AddSystem(netClient)

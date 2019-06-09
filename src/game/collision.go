@@ -22,7 +22,7 @@ type CollisionSystem struct {
 	space *resolv.Space
 }
 
-func (self *CollisionSystem) Init() {
+func (self *CollisionSystem) Init(w *World) {
 	dynamic.Register("PositionComponent", func() interface{} {
 		return &PositionComponent{}
 	})
@@ -43,6 +43,14 @@ func (self *CollisionSystem) RequiredComponentTypes() []ComponentType {
 
 func (self *CollisionSystem) UpdateFrequency() int {
 	return 60
+}
+
+func (self *CollisionSystem) RemoveFromStorage(entity *Entity) {
+	storages := map[int]*Storage{
+		int(PositionComponentType): &self.positionComponents,
+		int(CollisionComponentType): &self.collisionComponents,
+	}
+	RemoveComponentsFromStorage(entity, storages)
 }
 
 func (self *CollisionSystem) AddToStorage(entity *Entity) {
@@ -165,6 +173,14 @@ func (self *PositionComponent) CreateComponent() {
 
 func (self *PositionComponent) DestroyComponent() {
 
+}
+
+func (self *PositionComponent) AreEquals(component Component) bool {
+	if val, ok := component.(*PositionComponent); ok {
+		return val.Position.X() == self.Position.X() && val.Position.Y() == self.Position.Y()
+	} else {
+		return false
+	}
 }
 
 func (self *PositionComponent) Clone() Component {
