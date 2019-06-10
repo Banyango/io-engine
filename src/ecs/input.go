@@ -16,7 +16,7 @@ func (self *InputController) Clone() InputController {
 	ic.Player = map[PlayerId]*Input{}
 
 	for k, v := range self.Player {
-		ic.Player[k] = v
+		ic.Player[k] = v.Clone()
 	}
 
 	return ic
@@ -34,8 +34,8 @@ type Input struct {
 	MouseUp      map[int]bool
 }
 
-func (self *Input) Clone() Input {
-	i := Input{}
+func (self *Input) Clone() *Input {
+	i := NewInput()
 
 	for k, v := range self.KeyPressed {
 		i.KeyPressed[k] = v

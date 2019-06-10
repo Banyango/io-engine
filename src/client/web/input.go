@@ -96,9 +96,7 @@ func (self *ClientInputSystem) UpdateSystem(delta float64, world *World) {
 		return
 	}
 
-	clone := self.callbackInput.Clone()
-
-	world.Input.Player[0] = &clone
+	world.Input.Player[0] = self.callbackInput.Clone()
 
 	self.callbackInput = NewInput()
 
