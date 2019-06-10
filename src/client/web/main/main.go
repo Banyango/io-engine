@@ -66,6 +66,12 @@ func MainLoopClient(self *ecs.World) {
 	self.CurrentFrameTime = time.Now().UnixNano() / int64(time.Millisecond)
 	self.TimeElapsed = 0
 
+	defer func() {
+		if r := recover(); r != nil {
+			js.Global().Get("console").Call("log", "Recovering ", r)
+		}
+	}()
+
 	renderFrame = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 
 		self.LastFrameTime = self.CurrentFrameTime

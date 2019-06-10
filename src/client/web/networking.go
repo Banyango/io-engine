@@ -60,6 +60,8 @@ func (self *NetworkedClientSystem) Init(w *World) {
 
 		js.Global().Get("console").Call("log", "Creating WebRTC connection...")
 
+		self.SetupWebRTC()
+
 		log(fmt.Sprintln("Player Id", self.PlayerId))
 
 		self.SetupWebRTC()
@@ -187,6 +189,7 @@ func (self *NetworkedClientSystem) SetupWebRTC() {
 		jsBuf.Release()
 
 		return nil
+
 	}));
 	self.WebRTCConnection.Get("sendChannel").Set("onclose", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		log("sendChannel closed")
@@ -259,39 +262,39 @@ func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
 		return
 	}
 
-	if len(self.WorldStatePacket) > 0 {
-		for _, val := range self.WorldStatePacket {
+	if self.IsDataChannelConnected() {
 
-			for _, created := range val.Created {
-				world.AddEntityToWorld(*created.DeserializeNewEntity(world))
-			}
+		if self.WorldStatePacket != nil && len(self.WorldStatePacket) > 0 {
+			for _, val := range self.WorldStatePacket {
 
-			for _, destroyed := range val.Destroyed {
-				world.RemoveEntity(int64(destroyed))
-			}
-
-			resimulateRequired := false
-			for _, update := range val.Updates {
-				temp := update.DeserializeNewEntity(world)
-				if !world.CompareEntitiesAtTick(val.Tick, temp) {
-					resimulateRequired = true
-					break
+				for _, created := range val.Created {
+					world.AddEntityToWorld(*created.DeserializeNewEntity(world))
 				}
-			}
 
-			if resimulateRequired {
-				world.ResetToTick(val.Tick)
+				for _, destroyed := range val.Destroyed {
+					world.RemoveEntity(int64(destroyed))
+				}
 
+				resimulateRequired := false
 				for _, update := range val.Updates {
-					update.UpdateEntity(world.Entities[int64(update.NetworkId)])
+					temp := update.DeserializeNewEntity(world)
+					if !world.CompareEntitiesAtTick(val.Tick, temp) {
+						resimulateRequired = true
+						break
+					}
 				}
 
-				world.Resimulate(val.Tick)
+				if resimulateRequired {
+					world.ResetToTick(val.Tick)
+
+					for _, update := range val.Updates {
+						update.UpdateEntity(world.Entities[int64(update.NetworkId)])
+					}
+
+					world.Resimulate(val.Tick)
+				}
 			}
 		}
-	}
-
-	if self.IsDataChannelConnected() {
 
 		jsBuf := js.TypedArrayOf(world.Input.Player[0].ToBytes())
 

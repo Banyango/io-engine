@@ -25,9 +25,11 @@ func main() {
 
 	collision := new(game.CollisionSystem)
 	movement := new(game.KeyboardMovementSystem)
+	spawn := new(game.SpawnSystem)
 
 	w.AddSystem(movement)
 	w.AddSystem(collision)
+	w.AddSystem(spawn)
 
 	pm, err := ecs.NewPrefabManager(string(gameJson), w)
 
@@ -41,6 +43,8 @@ func main() {
 	w.TimeElapsed = 0
 
 	gameServer := server.Server{World: w}
+
+	spawn.AddSpawnListener(&gameServer)
 
 	go mainLoop(&gameServer)
 
@@ -67,6 +71,7 @@ func mainLoop(gameServer *server.Server) {
 		gameServer.World.TimeElapsed = gameServer.World.TimeElapsed + delta
 
 		for gameServer.World.TimeElapsed >= gameServer.World.Interval {
+			gameServer.HandleIncomingData(0.016)
 			gameServer.World.Update(0.016)
 			gameServer.SendNetworkData(0.016)
 			gameServer.World.TimeElapsed = gameServer.World.TimeElapsed - gameServer.World.Interval

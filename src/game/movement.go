@@ -65,7 +65,7 @@ func (self *KeyboardMovementSystem) UpdateSystem(delta float64, world *World) {
 
 		direction := math.NewVector(float64(0), float64(0))
 
-		input := world.Input.Player[PlayerId(net.Data.OwnerId)]
+		input := world.Input.Player[net.PlayerId]
 
 		if input.AnyKeyPressed() {
 

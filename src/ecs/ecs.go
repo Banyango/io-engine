@@ -28,9 +28,7 @@ const (
 	StateComponentType
 	CircleComponentType
 	ArcadeMovementComponentType
-	CorrectionComponentType
 	NetworkInstanceComponentType
-	BufferComponentType
 )
 
 type Storage struct {

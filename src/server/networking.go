@@ -57,7 +57,7 @@ Network Instance Component
 */
 
 type NetworkInstanceComponent struct {
-	Data NetworkData
+	PlayerId PlayerId
 }
 
 func (*NetworkInstanceComponent) Id() int {
@@ -65,7 +65,7 @@ func (*NetworkInstanceComponent) Id() int {
 }
 
 func (self *NetworkInstanceComponent) CreateComponent() {
-	self.Data.Data = make(map[int][]byte)
+
 }
 
 func (*NetworkInstanceComponent) DestroyComponent() {
@@ -74,51 +74,6 @@ func (*NetworkInstanceComponent) DestroyComponent() {
 
 func (*NetworkInstanceComponent) Clone() Component {
 	return new(NetworkInstanceComponent)
-}
-
-type NetworkInstanceDataCollectionSystem struct {
-	NetworkInstances Storage
-}
-
-func (self *NetworkInstanceDataCollectionSystem) Init(w *World) {
-	self.NetworkInstances = NewStorage()
-}
-
-func (self *NetworkInstanceDataCollectionSystem) AddToStorage(entity *Entity) {
-
-	keys := map[int]*Storage{
-		int(NetworkInstanceComponentType): &self.NetworkInstances,
-	}
-
-	AddComponentsToStorage(entity, keys)
-}
-
-func (self *NetworkInstanceDataCollectionSystem) RemoveFromStorage(entity *Entity) {
-	storages := map[int]*Storage{
-		int(NetworkInstanceComponentType): &self.NetworkInstances,
-	}
-	RemoveComponentsFromStorage(entity, storages)
-}
-
-func (self *NetworkInstanceDataCollectionSystem) RequiredComponentTypes() []ComponentType {
-	return []ComponentType{NetworkInstanceComponentType}
-}
-
-func (self *NetworkInstanceDataCollectionSystem) UpdateSystem(delta float64, world *World) {
-
-	for entity, _ := range self.NetworkInstances.Components {
-
-		instance := (*self.NetworkInstances.Components[entity]).(*NetworkInstanceComponent)
-
-		entity := world.Entities[entity]
-
-		for _, val := range entity.Components {
-			if syncVar, ok := val.(WriteSyncUDP); ok {
-				syncVar.WriteUDP(&instance.Data)
-			}
-		}
-
-	}
 }
 
 // todo there is an issue with creating client side entities whereby the id will collide with the server id of other network entities.

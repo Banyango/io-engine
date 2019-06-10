@@ -19,6 +19,7 @@ type ClientInputSystem struct {
 }
 
 func (self *ClientInputSystem) Init(world *World) {
+	self.callbackInput = NewInput()
 	go func() {
 		doc := js.Global().Get("document")
 
@@ -35,7 +36,7 @@ func (self *ClientInputSystem) Init(world *World) {
 			self.keyDownFunc = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 				e := args[0]
 
-				//fmt.Println("key down:", e.Get("keyCode"))
+				log("key down:", e.Get("keyCode"))
 
 				keyCode, err := KeyFromString(e.Get("keyCode").String())
 
@@ -54,7 +55,7 @@ func (self *ClientInputSystem) Init(world *World) {
 			self.keyUpFunc = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 				e := args[0]
 
-				//fmt.Println("key up:", e.Get("keyCode"))
+				log("key up:", e.Get("keyCode"))
 
 				keyCode, err := KeyFromString(e.Get("keyCode").String())
 

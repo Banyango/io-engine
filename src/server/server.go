@@ -18,14 +18,13 @@ const (
 	SEND_TICK_RATE = 0.05
 )
 
-
 type Server struct {
-	CurrentState          WorldStatePacket
-	mux                   sync.Mutex
-	PlayerIndex           uint16
-	Clients               []*ClientConnection
-	deltaCounter          float64
-	World *World
+	CurrentState WorldStatePacket
+	mux          sync.Mutex
+	PlayerIndex  uint16
+	Clients      []*ClientConnection
+	deltaCounter float64
+	World        *World
 }
 
 func (self *Server) EntityWasSpawned(entity *Entity) {
@@ -36,7 +35,8 @@ func (self *Server) EntityWasDestroyed(entity int64) {
 	self.CurrentState.Destroyed = append(self.CurrentState.Destroyed, int(entity))
 }
 
-func (self *Server) Ws(writer http.ResponseWriter, request *http.Request)  {
+func (self *Server) Ws(writer http.ResponseWriter, request *http.Request) {
+
 	upgrader := websocket.Upgrader{}
 
 	fmt.Println("Client is connecting..")
@@ -56,7 +56,7 @@ func (self *Server) SerializeEntity(entity *Entity) NetworkData {
 
 	data := NetworkData{}
 
-	for i:= range entity.Components {
+	for i := range entity.Components {
 		if val, ok := entity.Components[i].(WriteSyncUDP); ok {
 			val.WriteUDP(&data)
 		}
@@ -106,19 +106,18 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 
 	clientConn := new(ClientConnection)
 
-	//self.mux.Lock()
-
 	self.AddClient(clientConn)
-
-	entity.Id = self.World.FetchAndIncrementId()
-	self.World.AddEntityToWorld(entity)
 
 	clientConn.WSConnHandler = socker.NewClientConnection(conn)
 	clientConn.PlayerId = self.FetchAndIncrementPlayerId()
 
-	self.World.Input.Player[PlayerId(clientConn.PlayerId)] = NewInput()
+	networkInstanceComponent := new(NetworkInstanceComponent)
+	networkInstanceComponent.PlayerId = PlayerId(clientConn.PlayerId)
+	entity.Components[int(NetworkInstanceComponentType)] = networkInstanceComponent
 
-	//self.mux.Unlock()
+	self.World.Spawn(entity)
+
+	self.World.Input.Player[PlayerId(clientConn.PlayerId)] = NewInput()
 
 	fmt.Println("Client entityId: ", entity.Id, " Given playerId: ", clientConn.PlayerId)
 
@@ -151,12 +150,6 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 
 }
 
-func (self *Server) NetworkSendUDP(data NetworkData) {
-	self.mux.Lock()
-	self.CurrentState.Updates = append(self.CurrentState.Updates, data)
-	self.mux.Unlock()
-}
-
 func (self *Server) Clear() {
 	self.CurrentState.Updates = self.CurrentState.Updates[:0]
 }
@@ -170,9 +163,33 @@ func (self *Server) FetchAndIncrementPlayerId() uint16 {
 	return temp
 }
 
+func (self *Server) HandleIncomingData(delta float64) {
+	for _, client := range self.Clients {
 
+		// Handle WS messages
+		client.WSConnHandler.Handle()
+
+		if client.IsDataChannelOpen {
+			// Handle WebRTC messages
+			select {
+			case message, ok := <-client.UdpIn:
+				if ok {
+					// Handle input bytes from client
+					self.World.Input.Player[PlayerId(client.PlayerId)].InputFromBytes(message[0])
+				}
+			default:
+			}
+		}
+	}
+}
 
 func (self *Server) SendNetworkData(delta float64) {
+
+	self.deltaCounter += delta
+
+	if self.deltaCounter < SEND_TICK_RATE {
+		return
+	}
 
 	var udpBytesToWrite []byte
 	if len(self.CurrentState.Updates) > 0 {
@@ -185,33 +202,9 @@ func (self *Server) SendNetworkData(delta float64) {
 		udpBytesToWrite = gameStateBuffer.Bytes()
 	}
 
-	self.deltaCounter+=delta
-
 	for _, client := range self.Clients {
-
-		client.WSConnHandler.Handle()
-
 		// only send data changes if the webrtc connection is open.
 		if client.IsDataChannelOpen {
-
-			// handle webrtc messages
-			select {
-			case message, ok := <-client.UdpIn:
-				if ok {
-					// handle input bytes from client
-					self.World.Input.Player[PlayerId(client.PlayerId)].InputFromBytes(message[0])
-				}
-			default:
-			}
-
-			//if len(wsBytesToWrite) > 0 {
-			//	client.WSConnHandler.Write(wsBytesToWrite)
-			//}
-
-			if self.deltaCounter < SEND_TICK_RATE {
-				continue
-			}
-
 			if client.DataChannel != nil && len(udpBytesToWrite) > 0 {
 				err := client.DataChannel.Send(udpBytesToWrite)
 				if err != nil {
@@ -359,19 +352,19 @@ func (self *ClientConnection) HandleSignal(data []byte) {
 
 func (self *ClientConnection) SendHandshakePacket() {
 
-		networkPacket := ServerConnectionHandshakePacket{
-			PlayerId:        self.PlayerId,
-		}
+	networkPacket := ServerConnectionHandshakePacket{
+		PlayerId: self.PlayerId,
+	}
 
-		var buf bytes.Buffer
-		enc := gob.NewEncoder(&buf)
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
 
-		if err := enc.Encode(networkPacket); err != nil {
-				fmt.Printf("Encoding Failed")
-				return
-			}
+	if err := enc.Encode(networkPacket); err != nil {
+		fmt.Printf("Encoding Failed")
+		return
+	}
 
-		self.WSConnHandler.Write(buf.Bytes())
+	self.WSConnHandler.Write(buf.Bytes())
 
 }
 
