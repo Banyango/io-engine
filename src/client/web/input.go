@@ -14,6 +14,8 @@ type ClientInputSystem struct {
 	mouseMoveFunc js.Func
 	mouseDownFunc js.Func
 	mouseUpFunc js.Func
+
+	callbackInput *Input
 }
 
 func (self *ClientInputSystem) Init(world *World) {
@@ -25,7 +27,7 @@ func (self *ClientInputSystem) Init(world *World) {
 
 			self.mouseMoveFunc = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 				e := args[0]
-				world.Input.Player[0].MousePosition.Set(e.Get("clientX").Float(), e.Get("clientY").Float())
+				self.callbackInput.MousePosition.Set(e.Get("clientX").Float(), e.Get("clientY").Float())
 				return nil;
 			})
 			defer self.mouseMoveFunc.Release()
@@ -38,8 +40,8 @@ func (self *ClientInputSystem) Init(world *World) {
 				keyCode, err := KeyFromString(e.Get("keyCode").String())
 
 				if err == nil {
-					world.Input.Player[0].KeyDown[keyCode] = true
-					world.Input.Player[0].KeyPressed[keyCode] = true
+					self.callbackInput.KeyDown[keyCode] = true
+					self.callbackInput.KeyPressed[keyCode] = true
 				}
 
 				return nil;
@@ -57,8 +59,8 @@ func (self *ClientInputSystem) Init(world *World) {
 				keyCode, err := KeyFromString(e.Get("keyCode").String())
 
 				if err == nil {
-					world.Input.Player[0].KeyPressed[keyCode] = false
-					world.Input.Player[0].KeyUp[keyCode] = true
+					self.callbackInput.KeyPressed[keyCode] = false
+					self.callbackInput.KeyUp[keyCode] = true
 				}
 
 				return nil;
@@ -88,6 +90,16 @@ func (self *ClientInputSystem) AddToStorage(entity *Entity) {
 }
 
 func (self *ClientInputSystem) UpdateSystem(delta float64, world *World) {
+
+	if world.IsResimulating {
+		return
+	}
+
+	clone := self.callbackInput.Clone()
+
+	world.Input.Player[0] = &clone
+
+	self.callbackInput = NewInput()
 
 }
 
