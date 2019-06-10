@@ -18,7 +18,6 @@ import (
 type ConnectionStateType int
 
 type NetworkedClientSystem struct {
-
 	entities Storage
 
 	PlayerId    int
@@ -42,7 +41,6 @@ type NetworkedClientSystem struct {
 	mux              sync.Mutex
 	WorldStatePacket []server.WorldStatePacket
 }
-
 
 func (self *NetworkedClientSystem) Init(w *World) {
 
@@ -92,7 +90,7 @@ func (self *NetworkedClientSystem) Init(w *World) {
 		var packet server.ServerConnectionHandshakePacket
 
 		if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
-			fmt.Println("Error in Packet",err)
+			fmt.Println("Error in Packet", err)
 		}
 
 		self.PlayerId = int(packet.PlayerId)
@@ -110,7 +108,7 @@ func (self *NetworkedClientSystem) Init(w *World) {
 
 		u.Path = path.Join(u.Path, "connect")
 
-		js.Global().Get("console").Call("log", "Connecting to " + u.String())
+		js.Global().Get("console").Call("log", "Connecting to "+u.String())
 
 		self.ws = js.Global().Get("WebSocket").New(u.String())
 		self.ws.Set("binaryType", "arraybuffer")
@@ -159,7 +157,7 @@ func (self *NetworkedClientSystem) Init(w *World) {
 	}()
 }
 
-func (self *NetworkedClientSystem) SetupWebRTC () {
+func (self *NetworkedClientSystem) SetupWebRTC() {
 	log("Creating WebRTCConnection..")
 	webrtcConnectionJs := js.Global().Get("window").Get("WebRTCConnection")
 
@@ -181,7 +179,7 @@ func (self *NetworkedClientSystem) SetupWebRTC () {
 		var packet server.WorldStatePacket
 
 		if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
-			fmt.Println("Error in Packet",err)
+			fmt.Println("Error in Packet", err)
 		}
 
 		self.WorldStatePacket = append(self.WorldStatePacket, packet)
@@ -190,7 +188,6 @@ func (self *NetworkedClientSystem) SetupWebRTC () {
 
 		return nil
 	}));
-
 	self.WebRTCConnection.Get("sendChannel").Set("onclose", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		log("sendChannel closed")
 		self.IsConnected = false
@@ -236,12 +233,12 @@ func getElementByID(id string) js.Value {
 }
 
 func handleError(err error) {
-	js.Global().Get("console").Call("log",err.Error())
+	js.Global().Get("console").Call("log", err.Error())
 	panic(err)
 }
 
-func log(str... interface{}) {
-	js.Global().Get("console").Call("log",str...)
+func log(str ...interface{}) {
+	js.Global().Get("console").Call("log", str...)
 }
 
 func (self *NetworkedClientSystem) RequiredComponentTypes() []ComponentType {
@@ -298,10 +295,10 @@ func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
 
 		jsBuf := js.TypedArrayOf(world.Input.Player[0].ToBytes())
 
-		//log("sending input" + jsBuf.String())
 		self.WebRTCConnection.Get("sendChannel").Call("send", jsBuf)
 
 		jsBuf.Release()
+
 	}
 }
 
@@ -309,22 +306,10 @@ func (self *NetworkedClientSystem) IsDataChannelConnected() bool {
 	return self.IsConnected
 }
 
-
-func (self *NetworkedClientSystem) GetPrefabId(change server.EntityChange) int {
-	prefabIdToCreate := int(change.PrefabId)
-	if uint16(self.PlayerId) != change.OwnerId {
-		prefabIdToCreate = int(change.NetworkPrefabId)
-	}
-	return prefabIdToCreate
-}
-
 type ClientNetworkGlobal struct {
 	Packets []server.WorldStatePacket
 }
 
-
 func (self *ClientNetworkGlobal) CreateGlobal(world *World) {
 	self.Packets = []server.WorldStatePacket{}
 }
-
-

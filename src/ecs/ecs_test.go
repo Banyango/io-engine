@@ -1,10 +1,11 @@
 package ecs_test
 
 import (
-	"testing"
 	"github.com/stretchr/testify/assert"
-	"io-engine-backend/src/game"
 	"io-engine-backend/src/ecs"
+	"io-engine-backend/src/game"
+	"io-engine-backend/src/math"
+	"testing"
 )
 
 func TestCreateEntityFromJson(t *testing.T) {
@@ -115,8 +116,143 @@ func TestStorage(t *testing.T) {
 	s2.Components[0] = &component2
 
 	ref := (*s1.Components[0]).(*game.PositionComponent)
-	ref.Position.Set(1,1)
+	ref.Position.Set(1, 1)
 
 	assert.Equal(t, 1, (*s2.Components[0]).(*game.PositionComponent).Position.X())
 	assert.Equal(t, 1, (*s2.Components[0]).(*game.PositionComponent).Position.Y())
+}
+
+func TestWorld_CacheState_AddEntity(t *testing.T) {
+	world := ecs.NewWorld()
+
+	entity := ecs.NewEntity()
+
+	entity.Id = world.FetchAndIncrementId()
+	entity.Components[int(ecs.PositionComponentType)] = &game.PositionComponent{Position: math.NewVectorInt(1, 1)}
+
+	world.AddEntityToWorld(entity)
+
+	world.CacheState()
+
+	comp := entity.Components[int(ecs.PositionComponentType)].(*game.PositionComponent)
+	comp.Position.Set(2, 2)
+
+	assert.Equal(t, 1, len(world.Cache))
+
+	cachedComponent := world.Cache[0][0].Components[int(ecs.PositionComponentType)].(*game.PositionComponent)
+	assert.Equal(t, 1, cachedComponent.Position.X())
+	assert.Equal(t, 1, cachedComponent.Position.Y())
+
+}
+
+func TestWorld_CacheState_Reset(t *testing.T) {
+	world := ecs.NewWorld()
+
+	entity := ecs.NewEntity()
+
+	entity.Id = world.FetchAndIncrementId()
+	entity.Components[int(ecs.PositionComponentType)] = &game.PositionComponent{Position: math.NewVectorInt(1, 1)}
+
+	world.AddEntityToWorld(entity)
+
+	for i := 0; i < 4; i++ {
+		comp := entity.Components[int(ecs.PositionComponentType)].(*game.PositionComponent)
+		comp.Position.Set(2*i, 2*i)
+		world.Update(0.016)
+	}
+
+	world.ResetToTick(1)
+
+	cachedComponent := entity.Components[int(ecs.PositionComponentType)].(*game.PositionComponent)
+	assert.Equal(t, 2, cachedComponent.Position.X())
+	assert.Equal(t, 2, cachedComponent.Position.Y())
+	assert.Equal(t, 7, world.ValidatedBuffer)
+
+}
+
+func TestWorld_CacheState_MaxSize(t *testing.T) {
+	world := ecs.NewWorld()
+
+	entity := ecs.NewEntity()
+
+	entity.Id = world.FetchAndIncrementId()
+	entity.Components[int(ecs.PositionComponentType)] = &game.PositionComponent{Position: math.NewVectorInt(1, 1)}
+
+	world.AddEntityToWorld(entity)
+
+	for i := 0; i < 32; i++ {
+		world.Update(0.016)
+	}
+
+	world.ResetToTick(5)
+
+	for i := 0; i < 32; i++ {
+		world.Update(0.016)
+	}
+
+	assert.Equal(t, 32, len(world.Cache))
+	assert.Equal(t, 32, len(world.CacheInput))
+	assert.Equal(t, int32(0), world.ValidatedBuffer)
+
+}
+
+// test system for simulation
+type testSystem struct {
+}
+
+func (*testSystem) Init(w *ecs.World)                    {}
+func (*testSystem) AddToStorage(entity *ecs.Entity)      {}
+func (*testSystem) RemoveFromStorage(entity *ecs.Entity) {}
+
+func (*testSystem) RequiredComponentTypes() []ecs.ComponentType {
+	return []ecs.ComponentType{ecs.PositionComponentType}
+}
+
+func (*testSystem) UpdateSystem(delta float64, world *ecs.World) {
+	for i := range world.Entities {
+		comp := world.Entities[i].Components[int(ecs.PositionComponentType)].(*game.PositionComponent)
+		comp.Position = comp.Position.Add(math.NewVectorInt(1, 1))
+	}
+}
+
+func TestWorld_Resimulate(t *testing.T) {
+	world := ecs.NewWorld()
+
+	world.AddSystem(new(testSystem))
+
+	entity := ecs.NewEntity()
+
+	entity.Id = world.FetchAndIncrementId()
+	entity.Components[int(ecs.PositionComponentType)] = &game.PositionComponent{Position: math.NewVectorInt(0, 0)}
+
+	world.AddEntityToWorld(entity)
+
+	for i := 0; i < 32; i++ {
+		world.Update(0.016)
+	}
+
+	{
+		cachedComponent := entity.Components[int(ecs.PositionComponentType)].(*game.PositionComponent)
+		assert.Equal(t, 32, cachedComponent.Position.X())
+		assert.Equal(t, 32, cachedComponent.Position.Y())
+	}
+
+	serverState := ecs.NewEntity()
+	serverState.Id = entity.Id
+	serverState.Components[int(ecs.PositionComponentType)] = &game.PositionComponent{Position: math.NewVectorInt(7, 7)}
+
+	same := world.CompareEntitiesAtTick(2, &serverState)
+
+	assert.False(t, same)
+
+	world.ResetToTick(2)
+
+	serverResetEntity := world.Entities[serverState.Id].Components[int(ecs.PositionComponentType)].(*game.PositionComponent)
+	serverResetEntity.Position = math.NewVectorInt(7,7)
+
+	world.Resimulate(2)
+
+	cachedComponent := world.Entities[serverState.Id].Components[int(ecs.PositionComponentType)].(*game.PositionComponent)
+	assert.Equal(t, 37, cachedComponent.Position.X())
+	assert.Equal(t, 37, cachedComponent.Position.Y())
 }

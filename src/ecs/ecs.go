@@ -81,6 +81,12 @@ func (entity *Entity) CompareTo(other *Entity) (same bool){
 	return true
 }
 
+func NewEntity() Entity {
+	e := Entity{}
+	e.Components = make(map[int]Component)
+	return e
+}
+
 /**
 Systems are behaviors
 
@@ -108,6 +114,7 @@ Globals  - Are static components like input that dont really belong
 
 const (
 	FIXED_DELTA = 0.016
+	MAX_CACHE_SIZE = 32
 )
 
 type World struct {
@@ -119,6 +126,7 @@ type World struct {
 	Entities map[int64]*Entity
 
 	Cache []map[int64]*Entity
+	CacheInput []InputController
 	ValidatedBuffer int32
 	IsResimulating bool
 
@@ -357,14 +365,20 @@ func (w *World) ResetToTick(tick int64) {
 
 	if (len(w.Cache)- 1) - int(diff) > 0 {
 
-		w.Entities = w.Cache[(len(w.Cache)- 1) - diff]
+		index := (len(w.Cache) - 1) - diff
+
+		w.Entities = w.Cache[index]
+		w.Input = w.CacheInput[index]
 
 		mask := int32(0)
 		for i := 0; i < diff; i++ {
-			mask = mask << 1
+			mask = (mask << 1) | 1
 		}
 
 		w.ValidatedBuffer = w.ValidatedBuffer | mask
+
+		w.Cache = w.Cache[:index]
+		w.CacheInput = w.CacheInput[:index]
 	}
 
 }
@@ -375,6 +389,7 @@ func (w *World) Resimulate (tick int64) {
 
 	w.IsResimulating = true
 	for i := 0; i < diff; i++ {
+		w.Input = w.CacheInput[diff + i]
 		w.Update(FIXED_DELTA)
 	}
 	w.IsResimulating = false
@@ -388,15 +403,25 @@ func (w *World) CacheState() {
 		clone[i] = entity.Clone()
 	}
 
+	inputClone := w.Input.Clone()
+
 	w.Cache = append(w.Cache, clone)
+	w.CacheInput = append(w.CacheInput, inputClone)
 
 	w.ValidatedBuffer = w.ValidatedBuffer << 1
+
+	if len(w.Cache) > 32 {
+		w.Cache = w.Cache[1:]
+		w.CacheInput = w.CacheInput[1:]
+	}
 }
 
 func (w *World) CompareEntitiesAtTick(tick int64, tempEntity *Entity) (same bool) {
 	diff := int(w.CurrentTick - tick)
 
 	if (len(w.Cache)-1) - diff > 0 {
-		w.Cache[(len(w.Cache)-1) - diff][tempEntity.Id].CompareTo(tempEntity)
+		return w.Cache[(len(w.Cache)-1) - diff][tempEntity.Id].CompareTo(tempEntity)
 	}
+
+	return true
 }

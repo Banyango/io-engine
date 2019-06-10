@@ -10,8 +10,19 @@ type InputController struct {
 	Player map[PlayerId]*Input
 }
 
-type Input struct {
+func (self *InputController) Clone() InputController {
+	ic := InputController{}
 
+	ic.Player = map[PlayerId]*Input{}
+
+	for k, v := range self.Player {
+		ic.Player[k] = v
+	}
+
+	return ic
+}
+
+type Input struct {
 	KeyDown    map[KeyCode]bool
 	KeyPressed map[KeyCode]bool
 	KeyUp      map[KeyCode]bool
@@ -21,7 +32,38 @@ type Input struct {
 	MouseDown    map[int]bool
 	MousePressed map[int]bool
 	MouseUp      map[int]bool
+}
 
+func (self *Input) Clone() Input {
+	i := Input{}
+
+	for k, v := range self.KeyPressed {
+		i.KeyPressed[k] = v
+	}
+
+	for k, v := range self.KeyDown {
+		i.KeyDown[k] = v
+	}
+
+	for k, v := range self.KeyUp {
+		i.KeyUp[k] = v
+	}
+
+	for k, v := range self.MousePressed {
+		i.MousePressed[k] = v
+	}
+
+	for k, v := range self.MouseUp {
+		i.MouseUp[k] = v
+	}
+
+	for k, v := range self.MouseDown {
+		i.MouseDown[k] = v
+	}
+
+	i.MousePosition = self.MousePosition
+
+	return i
 }
 
 func NewInput() *Input {
@@ -120,4 +162,3 @@ const (
 	X     KeyCode = 88
 	C     KeyCode = 67
 )
-
