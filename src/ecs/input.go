@@ -4,7 +4,7 @@ import (
 	"io-engine-backend/src/math"
 )
 
-type PlayerId int
+type PlayerId uint16
 
 type InputController struct {
 	Player map[PlayerId]*Input

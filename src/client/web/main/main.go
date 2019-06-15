@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io-engine-backend/src/client"
 	"io-engine-backend/src/client/web"
 	"io-engine-backend/src/game"
 	"io-engine-backend/src/ecs"
@@ -29,7 +30,7 @@ func main() {
 
 	input := new(web.ClientInputSystem)
 	collision := new(game.CollisionSystem)
-	movement  := new(web.ClientMovementSystem)
+	movement  := new(client.ClientMovementSystem)
 	netClient := new(web.NetworkedClientSystem)
 	debugClient := new(web.DebugSystem)
 	//clientData := new(client.ClientNetworkDataSystem)

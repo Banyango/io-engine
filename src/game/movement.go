@@ -65,7 +65,7 @@ func (self *KeyboardMovementSystem) UpdateSystem(delta float64, world *World) {
 
 		direction := math.NewVector(float64(0), float64(0))
 
-		input := world.Input.Player[net.PlayerId]
+		input := world.Input.Player[net.OwnerId]
 
 		if input.AnyKeyPressed() {
 
@@ -120,7 +120,14 @@ func (self *ArcadeMovementComponent) DestroyComponent() {
 
 }
 
-
+func (self *ArcadeMovementComponent) Reset(component Component) {
+	if val, ok := component.(*ArcadeMovementComponent); ok {
+		self.Drag = val.Drag
+		self.Speed = val.Speed
+		self.Gravity.Set(val.Gravity.X(), val.Gravity.Y())
+		self.MaxSpeed.Set(val.MaxSpeed.X(), val.MaxSpeed.Y())
+	}
+}
 
 func (self *ArcadeMovementComponent) Clone() Component {
 	component := new(ArcadeMovementComponent)

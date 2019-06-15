@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc"
 	. "io-engine-backend/src/ecs"
+	"log"
 	"net/http"
 	"sync"
 )
@@ -52,9 +53,9 @@ func (self *Server) Ws(writer http.ResponseWriter, request *http.Request) {
 
 }
 
-func (self *Server) SerializeEntity(entity *Entity) NetworkData {
+func (self *Server) SerializeEntity(entity *Entity) *NetworkData {
 
-	data := NetworkData{}
+	data := NetworkData{Data: map[int][]byte{}}
 
 	for i := range entity.Components {
 		if val, ok := entity.Components[i].(WriteSyncUDP); ok {
@@ -62,7 +63,7 @@ func (self *Server) SerializeEntity(entity *Entity) NetworkData {
 		}
 	}
 
-	return data
+	return &data
 }
 
 func (self *NetworkData) UpdateEntity(entity *Entity) {
@@ -75,9 +76,17 @@ func (self *NetworkData) UpdateEntity(entity *Entity) {
 	}
 }
 
-func (self *NetworkData) DeserializeNewEntity(world *World) *Entity {
+func (self *NetworkData) DeserializeNewEntity(world *World, isPeer bool) *Entity {
 
-	entity, err := world.PrefabData.CreatePrefab(int(self.PrefabId))
+	log.Println("deserializing entity")
+
+	prefabId := int(self.PrefabId)
+
+	if isPeer {
+		prefabId = prefabId + 1
+	}
+
+	entity, err := world.PrefabData.CreatePrefab(prefabId)
 
 	if err != nil {
 		fmt.Println("error creating prefab")
@@ -97,13 +106,6 @@ func (self *NetworkData) DeserializeNewEntity(world *World) *Entity {
 
 func (self *Server) createClientConnection(conn *websocket.Conn) {
 
-	entity, err := self.World.PrefabData.CreatePrefab(0)
-
-	if err != nil {
-		fmt.Println("Error Occurred Creating Player Prefab")
-		return
-	}
-
 	clientConn := new(ClientConnection)
 
 	self.AddClient(clientConn)
@@ -111,15 +113,9 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 	clientConn.WSConnHandler = socker.NewClientConnection(conn)
 	clientConn.PlayerId = self.FetchAndIncrementPlayerId()
 
-	networkInstanceComponent := new(NetworkInstanceComponent)
-	networkInstanceComponent.PlayerId = PlayerId(clientConn.PlayerId)
-	entity.Components[int(NetworkInstanceComponentType)] = networkInstanceComponent
-
-	self.World.Spawn(entity)
-
 	self.World.Input.Player[PlayerId(clientConn.PlayerId)] = NewInput()
 
-	fmt.Println("Client entityId: ", entity.Id, " Given playerId: ", clientConn.PlayerId)
+	fmt.Println("Client Given playerId: ", clientConn.PlayerId)
 
 	clientConn.WSConnHandler.Add(func(message []byte) bool {
 		fmt.Println("Sending Buffered Entities to -> player ", clientConn.PlayerId)
@@ -127,21 +123,49 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 		return true
 	})
 
-	// setup webrtc connection send offer
 	clientConn.WSConnHandler.Add(func(message []byte) bool {
-		fmt.Println("Setting up webrtc data channel -> player ", clientConn.PlayerId)
-		clientConn.ConnectToDataChannel(message)
-		return true
-	})
+		if clientConn.PeerConnection == nil {
+			fmt.Println("Setting up webrtc data channel -> player ", clientConn.PlayerId)
+			clientConn.ConnectToDataChannel(message)
+		}
 
-	clientConn.WSConnHandler.Add(func(message []byte) bool {
-		fmt.Println("Handling messages -> player", clientConn.PlayerId)
+		fmt.Println("Handling messages -> player", clientConn.PlayerId, string(message))
 		clientConn.HandleSignal(message)
+
 		return clientConn.IsDataChannelOpen
 	})
 
 	clientConn.WSConnHandler.Add(func(message []byte) bool {
-		//clientConn.GameMessage(message)
+		fmt.Println("Spawning -> player", clientConn.PlayerId)
+		var handshake map[string]interface{}
+		err := json.Unmarshal(message, &handshake)
+
+		if err != nil {
+			// close connection
+			// todo handle this better. Unsubscribe the player.
+			fmt.Println("messaging failed!")
+			panic(err)
+		}
+
+		if val, ok := handshake["event"]; ok {
+			if val == "spawn" {
+				entity, err := self.World.PrefabData.CreatePrefab(0)
+
+				if err != nil {
+					// close connection
+					// todo handle this better. Unsubscribe the player.
+					fmt.Println("Handshake failed!")
+					panic(err)
+				}
+
+				networkInstanceComponent := new(NetworkInstanceComponent)
+				networkInstanceComponent.OwnerId = PlayerId(clientConn.PlayerId)
+				entity.Components[int(NetworkInstanceComponentType)] = networkInstanceComponent
+
+				self.World.Spawn(entity)
+			}
+		}
+
 		return false
 	})
 
@@ -152,15 +176,17 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 
 func (self *Server) Clear() {
 	self.CurrentState.Updates = self.CurrentState.Updates[:0]
+	self.CurrentState.Created = self.CurrentState.Created[:0]
+	self.CurrentState.Destroyed = self.CurrentState.Destroyed[:0]
 }
 
-func (self *Server) FetchAndIncrementPlayerId() uint16 {
+func (self *Server) FetchAndIncrementPlayerId() PlayerId {
 
 	temp := self.PlayerIndex
 
 	self.PlayerIndex++
 
-	return temp
+	return PlayerId(temp)
 }
 
 func (self *Server) HandleIncomingData(delta float64) {
@@ -192,15 +218,14 @@ func (self *Server) SendNetworkData(delta float64) {
 	}
 
 	var udpBytesToWrite []byte
-	if len(self.CurrentState.Updates) > 0 {
-		var gameStateBuffer bytes.Buffer
-		enc := gob.NewEncoder(&gameStateBuffer)
-		if err := enc.Encode(self.CurrentState); err != nil {
-			fmt.Printf("Encoding Failed")
-			return
-		}
-		udpBytesToWrite = gameStateBuffer.Bytes()
+
+	var gameStateBuffer bytes.Buffer
+	enc := gob.NewEncoder(&gameStateBuffer)
+	if err := enc.Encode(self.CurrentState); err != nil {
+		fmt.Printf("Encoding Failed")
+		return
 	}
+	udpBytesToWrite = gameStateBuffer.Bytes()
 
 	for _, client := range self.Clients {
 		// only send data changes if the webrtc connection is open.
@@ -229,7 +254,7 @@ func (self *Server) AddClient(connection *ClientConnection) {
 }
 
 type ClientConnection struct {
-	PlayerId uint16
+	PlayerId PlayerId
 	// websocket handler.
 	WSConnHandler *socker.SockerClientConnection
 
@@ -277,6 +302,7 @@ func (self *ClientConnection) ConnectToDataChannel(data []byte) {
 		self.DataChannel = d
 
 		d.OnOpen(func() {
+			fmt.Printf("Opened DataChannel player{%d} %d\n", self.PlayerId, d.ID())
 			self.IsDataChannelOpen = true
 		})
 
@@ -305,6 +331,7 @@ func (self *ClientConnection) HandleSignal(data []byte) {
 	}
 
 	if val, ok := handshake["offer"]; ok {
+		fmt.Println("Rec Offer: ", handshake["offer"])
 		offer := webrtc.SessionDescription{}
 		Decode(val.(string), &offer)
 

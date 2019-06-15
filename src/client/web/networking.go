@@ -20,7 +20,7 @@ type ConnectionStateType int
 type NetworkedClientSystem struct {
 	entities Storage
 
-	PlayerId    int
+	PlayerId    PlayerId
 	ConnHandler *socker.SockerClient
 
 	done chan struct{}
@@ -36,10 +36,10 @@ type NetworkedClientSystem struct {
 	WebRTCConnection js.Value
 
 	IsConnected      bool
-	Packets          []server.WorldStatePacket
-	State            server.WorldStatePacket
+	Packets          []*server.WorldStatePacket
+	State            *server.WorldStatePacket
 	mux              sync.Mutex
-	WorldStatePacket []server.WorldStatePacket
+	WorldStatePacket []*server.WorldStatePacket
 }
 
 func (self *NetworkedClientSystem) Init(w *World) {
@@ -56,11 +56,9 @@ func (self *NetworkedClientSystem) Init(w *World) {
 			log(fmt.Sprintln("Error in handshake packet!"))
 		}
 
-		self.PlayerId = int(packet.PlayerId)
+		self.PlayerId = packet.PlayerId
 
 		js.Global().Get("console").Call("log", "Creating WebRTC connection...")
-
-		self.SetupWebRTC()
 
 		log(fmt.Sprintln("Player Id", self.PlayerId))
 
@@ -95,7 +93,7 @@ func (self *NetworkedClientSystem) Init(w *World) {
 			fmt.Println("Error in Packet", err)
 		}
 
-		self.PlayerId = int(packet.PlayerId)
+		self.PlayerId = packet.PlayerId
 
 		return false
 	})
@@ -184,7 +182,7 @@ func (self *NetworkedClientSystem) SetupWebRTC() {
 			fmt.Println("Error in Packet", err)
 		}
 
-		self.WorldStatePacket = append(self.WorldStatePacket, packet)
+		self.WorldStatePacket = append(self.WorldStatePacket, &packet)
 
 		jsBuf.Release()
 
@@ -200,6 +198,20 @@ func (self *NetworkedClientSystem) SetupWebRTC() {
 	self.WebRTCConnection.Get("sendChannel").Set("onopen", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		log("sendChannel opened")
 		self.IsConnected = true
+
+		{
+			// this is a hack and should be changed. advances the server state once the connection is opened.
+			enc := js.Global().Get("TextEncoder").New()
+			result := enc.Call("encode", "{\"event\":\"connectionOpened\"}")
+			self.ws.Call("send", result)
+		}
+
+		enc := js.Global().Get("TextEncoder").New()
+
+		result := enc.Call("encode", "{\"event\":\"spawn\"}")
+
+		self.ws.Call("send", result)
+
 		return nil
 	}))
 }
@@ -266,53 +278,19 @@ func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
 
 		if self.WorldStatePacket != nil && len(self.WorldStatePacket) > 0 {
 			for _, val := range self.WorldStatePacket {
-
-				for _, created := range val.Created {
-					world.AddEntityToWorld(*created.DeserializeNewEntity(world))
-				}
-
-				for _, destroyed := range val.Destroyed {
-					world.RemoveEntity(int64(destroyed))
-				}
-
-				resimulateRequired := false
-				for _, update := range val.Updates {
-					temp := update.DeserializeNewEntity(world)
-					if !world.CompareEntitiesAtTick(val.Tick, temp) {
-						resimulateRequired = true
-						break
-					}
-				}
-
-				if resimulateRequired {
-					world.ResetToTick(val.Tick)
-
-					for _, update := range val.Updates {
-						update.UpdateEntity(world.Entities[int64(update.NetworkId)])
-					}
-
-					world.Resimulate(val.Tick)
-				}
+				log(val)
 			}
 		}
 
-		jsBuf := js.TypedArrayOf(world.Input.Player[0].ToBytes())
-
-		self.WebRTCConnection.Get("sendChannel").Call("send", jsBuf)
-
-		jsBuf.Release()
-
+		log("Sending input")
+		if world.Input != nil && world.Input.Player[0] != nil {
+			jsBuf := js.TypedArrayOf(world.Input.Player[0].ToBytes())
+			self.WebRTCConnection.Get("sendChannel").Call("send", jsBuf)
+			jsBuf.Release()
+		}
 	}
 }
 
 func (self *NetworkedClientSystem) IsDataChannelConnected() bool {
 	return self.IsConnected
-}
-
-type ClientNetworkGlobal struct {
-	Packets []server.WorldStatePacket
-}
-
-func (self *ClientNetworkGlobal) CreateGlobal(world *World) {
-	self.Packets = []server.WorldStatePacket{}
 }

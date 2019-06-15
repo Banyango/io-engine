@@ -23,13 +23,15 @@ func main() {
 	fmt.Println("Creating World.")
 	w := ecs.NewWorld()
 
-	collision := new(game.CollisionSystem)
 	movement := new(game.KeyboardMovementSystem)
+	collision := new(game.CollisionSystem)
 	spawn := new(game.SpawnSystem)
+	networkCollect := new(server.NetworkInstanceDataCollectionSystem)
 
 	w.AddSystem(movement)
 	w.AddSystem(collision)
 	w.AddSystem(spawn)
+	w.AddSystem(networkCollect)
 
 	pm, err := ecs.NewPrefabManager(string(gameJson), w)
 

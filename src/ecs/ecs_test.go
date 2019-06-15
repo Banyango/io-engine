@@ -145,6 +145,57 @@ func TestWorld_CacheState_AddEntity(t *testing.T) {
 
 }
 
+func TestWorld_CacheInput(t *testing.T) {
+
+	world := ecs.NewWorld()
+
+	world.Update(0.016)
+
+	world.Input.Player[0].KeyPressed[ecs.Down] = true
+
+	world.Update(0.016)
+	world.Update(0.016)
+	world.Update(0.016)
+
+	world.Input.Player[0].KeyPressed[ecs.Down] = false
+
+	world.Update(0.016)
+
+	assert.False(t, world.CacheInput[0].Player[0].KeyPressed[ecs.Down])
+	assert.True(t, world.CacheInput[1].Player[0].KeyPressed[ecs.Down])
+	assert.True(t, world.CacheInput[2].Player[0].KeyPressed[ecs.Down])
+	assert.True(t, world.CacheInput[3].Player[0].KeyPressed[ecs.Down])
+	assert.False(t, world.CacheInput[4].Player[0].KeyPressed[ecs.Down])
+
+}
+
+func TestWorld_CacheInputWithReset(t *testing.T) {
+
+	world := ecs.NewWorld()
+
+	world.Update(0.016)
+
+	world.Input.Player[0].KeyPressed[ecs.Down] = true
+
+	world.Update(0.016)
+	world.Update(0.016)
+	world.Update(0.016)
+
+	world.Input.Player[0].KeyPressed[ecs.Down] = false
+
+	world.Update(0.016)
+
+	world.ResetToTick(1)
+	world.Resimulate(1)
+
+	assert.False(t, world.CacheInput[0].Player[0].KeyPressed[ecs.Down])
+	assert.True(t, world.CacheInput[1].Player[0].KeyPressed[ecs.Down])
+	assert.True(t, world.CacheInput[2].Player[0].KeyPressed[ecs.Down])
+	assert.True(t, world.CacheInput[3].Player[0].KeyPressed[ecs.Down])
+	assert.False(t, world.CacheInput[4].Player[0].KeyPressed[ecs.Down])
+
+}
+
 func TestWorld_CacheState_Reset(t *testing.T) {
 	world := ecs.NewWorld()
 
@@ -163,10 +214,10 @@ func TestWorld_CacheState_Reset(t *testing.T) {
 
 	world.ResetToTick(1)
 
-	cachedComponent := entity.Components[int(ecs.PositionComponentType)].(*game.PositionComponent)
+	cachedComponent := world.Entities[entity.Id].Components[int(ecs.PositionComponentType)].(*game.PositionComponent)
 	assert.Equal(t, 2, cachedComponent.Position.X())
 	assert.Equal(t, 2, cachedComponent.Position.Y())
-	assert.Equal(t, 7, world.ValidatedBuffer)
+	assert.Equal(t, int32(7), world.ValidatedBuffer)
 
 }
 
@@ -248,7 +299,7 @@ func TestWorld_Resimulate(t *testing.T) {
 	world.ResetToTick(2)
 
 	serverResetEntity := world.Entities[serverState.Id].Components[int(ecs.PositionComponentType)].(*game.PositionComponent)
-	serverResetEntity.Position = math.NewVectorInt(7,7)
+	serverResetEntity.Position = math.NewVectorInt(7, 7)
 
 	world.Resimulate(2)
 

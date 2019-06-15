@@ -25,16 +25,6 @@ class WebRTCConnection {
 
         this.pc.oniceconnectionstatechange = e => console.log(`[js]: icestate:${this.pc.iceConnectionState}`);
 
-        this.pc.onicecandidate = event => {
-            if (event.candidate !== null && event.candidate.candidate !== "") {
-                // send the candidate to the remote peer
-                const enc = new TextEncoder();
-                console.log(JSON.stringify(event.candidate.candidate));
-                this.webSocket.send(enc.encode(JSON.stringify({"candidate": JSON.stringify(event.candidate.toJSON())})));
-                console.log("[[js]: ICE candidate sent..]");
-            }
-        };
-
         this.pc.onnegotiationneeded = async () => {
             try {
                 await this.pc.setLocalDescription(await this.pc.createOffer());
@@ -44,6 +34,16 @@ class WebRTCConnection {
                 console.log("[[js]: Offer sent..]");
             } catch (err) {
                 console.error(err);
+            }
+        };
+
+        this.pc.onicecandidate = event => {
+            if (event.candidate !== null && event.candidate.candidate !== "") {
+                // send the candidate to the remote peer
+                const enc = new TextEncoder();
+                console.log(JSON.stringify(event.candidate.candidate));
+                this.webSocket.send(enc.encode(JSON.stringify({"candidate": JSON.stringify(event.candidate.toJSON())})));
+                console.log("[[js]: ICE candidate sent..]");
             }
         };
     }

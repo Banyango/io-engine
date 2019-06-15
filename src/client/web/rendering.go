@@ -130,3 +130,7 @@ func (self *CircleRendererComponent) Clone() Component {
 	component.Radius = self.Radius
 	return component
 }
+
+func (self *CircleRendererComponent) Reset(component Component) {
+
+}

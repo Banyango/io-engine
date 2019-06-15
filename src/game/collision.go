@@ -79,7 +79,7 @@ func (self *CollisionSystem) UpdateSystem(delta float64, world *World) {
 		collider.shape.X = int32(position.Position.X())
 		collider.shape.Y = int32(position.Position.Y())
 
-		collider.Reset()
+		collider.ResetBooleans()
 	}
 
 	for entity, _ := range self.collisionComponents.Components {
@@ -140,6 +140,12 @@ type PositionComponent struct {
 	Position math.VectorInt
 }
 
+func (self *PositionComponent) Reset(component Component) {
+	if val, ok := component.(*PositionComponent); ok {
+		self.Position.Set(val.Position.X(), val.Position.Y())
+	}
+}
+
 func (self *PositionComponent) ReadUDP(networkPacket *server.NetworkData) {
 	var data struct {
 		X int
@@ -174,6 +180,8 @@ func (self *PositionComponent) CreateComponent() {
 func (self *PositionComponent) DestroyComponent() {
 
 }
+
+
 
 func (self *PositionComponent) AreEquals(component Component) bool {
 	if val, ok := component.(*PositionComponent); ok {
@@ -253,12 +261,18 @@ func (c *CollisionComponent) DestroyComponent() {
 
 }
 
+func (self *CollisionComponent) Reset(component Component) {
+	if val, ok := component.(*CollisionComponent); ok {
+		self.Size.Set(val.Size.X(), val.Size.Y())
+		self.Velocity.Set(val.Velocity.X(), val.Velocity.Y())
+	}
+}
 
 func (c *CollisionComponent) Extents(position math.VectorInt) (math.VectorInt, math.VectorInt) {
 	return c.Min(position), c.Max(position)
 }
 
-func (c *CollisionComponent) Reset() {
+func (c *CollisionComponent) ResetBooleans() {
 	c.WasBottom = c.Bottom
 	c.WasLeft = c.Left
 	c.WasRight = c.Right

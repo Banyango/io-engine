@@ -1,4 +1,4 @@
-package web
+package client
 
 import (
 	"github.com/goburrow/dynamic"

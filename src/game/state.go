@@ -59,7 +59,7 @@ func (self *SpawnSystem) UpdateSystem(delta float64, world *World) {
 	if world.ToSpawn != nil {
 		for _, entity := range world.ToSpawn {
 
-			world.FetchAndIncrementId()
+			entity.Id = world.FetchAndIncrementId()
 
 			world.AddEntityToWorld(entity)
 

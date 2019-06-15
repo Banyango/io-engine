@@ -2,14 +2,8 @@
   "name": "test",
   "version": "0.0.1",
   "prefabs": {
-    "ConnectedClient" : {
-      "id": "0",
-      "components":[
-        {"Type": "PlayerStateComponent"}
-      ]
-    },
     "Player_owned" : {
-      "id": "1",
+      "id": "0",
       "components":[
         {"Type":"PositionComponent", "Position":[0,0] },
         {"Type":"CollisionComponent", "Size":[2,2], "Velocity":[0,0] },
@@ -18,7 +12,7 @@
       ]
     },
     "Player_peer" : {
-      "id": "2",
+      "id": "1",
       "components":[
         {"Type":"PositionComponent", "Position":[0,0] },
         {"Type":"CircleRendererComponent", "Size":[6,6], "Radius":12.3, "Color":"#001121" }

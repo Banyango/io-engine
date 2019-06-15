@@ -14,6 +14,7 @@ type Component interface {
 	CreateComponent()
 	DestroyComponent()
 	Clone() Component
+	Reset(component Component)
 }
 
 type CompareComponent interface {
@@ -79,6 +80,12 @@ func (entity *Entity) CompareTo(other *Entity) (same bool){
 	return true
 }
 
+func (self *Entity) ResetTo(state *Entity) {
+	for i,val := range self.Components {
+		val.Reset(state.Components[i])
+	}
+}
+
 func NewEntity() Entity {
 	e := Entity{}
 	e.Components = make(map[int]Component)
@@ -124,14 +131,14 @@ type World struct {
 	Entities map[int64]*Entity
 
 	Cache []map[int64]*Entity
-	CacheInput []InputController
+	CacheInput []*InputController
 	ValidatedBuffer int32
 	IsResimulating bool
 
 	ToSpawn []Entity
 	ToDestroy []int64
 
-	Input InputController
+	Input *InputController
 
 	TimeElapsed      int64
 	LastFrameTime    int64
@@ -144,7 +151,9 @@ type World struct {
 }
 
 func (w *World) Update(delta float64) {
-	w.CurrentTick++
+	if !w.IsResimulating {
+		w.CurrentTick++
+	}
 
 	for _, v := range w.Systems {
 		(*v).UpdateSystem(delta, w)
@@ -163,7 +172,7 @@ func NewWorld() *World {
 	world := new(World)
 
 	world.Entities = map[int64]*Entity{}
-	world.Input = InputController{map[PlayerId]*Input{0: NewInput()}}
+	world.Input = &InputController{map[PlayerId]*Input{0: NewInput()}}
 
 	world.Interval = 16
 
@@ -361,11 +370,31 @@ func (w *World) ResetToTick(tick int64) {
 
 	diff := int(w.CurrentTick - tick)
 
-	if (len(w.Cache)- 1) - int(diff) > 0 {
+	if (len(w.Cache)) - int(diff) > 0 {
 
-		index := (len(w.Cache) - 1) - diff
+		index := (len(w.Cache)) - diff
 
-		w.Entities = w.Cache[index]
+		// update
+		for id, entity := range w.Cache[index] {
+			if val, ok := w.Entities[id]; ok {
+				val.ResetTo(entity)
+			}
+		}
+
+		// delete
+		for id := range w.Entities {
+			if _, ok := w.Cache[index][id]; !ok {
+				w.RemoveEntity(id)
+			}
+		}
+
+		// create
+		for id, entity := range w.Cache[index] {
+			if _, ok := w.Entities[id]; !ok {
+				w.AddEntityToWorld(*entity)
+			}
+		}
+
 		w.Input = w.CacheInput[index]
 
 		mask := int32(0)
@@ -376,18 +405,20 @@ func (w *World) ResetToTick(tick int64) {
 		w.ValidatedBuffer = w.ValidatedBuffer | mask
 
 		w.Cache = w.Cache[:index]
-		w.CacheInput = w.CacheInput[:index]
 	}
 
 }
 
 func (w *World) Resimulate (tick int64) {
 
-	diff := int(w.CurrentTick - tick)
+	diff := w.CurrentTick - tick
+
+	index := w.CurrentTick - diff
 
 	w.IsResimulating = true
-	for i := 0; i < diff; i++ {
-		w.Input = w.CacheInput[diff + i]
+	for i := int64(0); i < w.CurrentTick-1; i++ {
+		clone := w.CacheInput[index+i].Clone()
+		w.Input = &clone
 		w.Update(FIXED_DELTA)
 	}
 	w.IsResimulating = false
@@ -404,21 +435,31 @@ func (w *World) CacheState() {
 	inputClone := w.Input.Clone()
 
 	w.Cache = append(w.Cache, clone)
-	w.CacheInput = append(w.CacheInput, inputClone)
+
+	if !w.IsResimulating {
+		w.CacheInput = append(w.CacheInput, &inputClone)
+	}
 
 	w.ValidatedBuffer = w.ValidatedBuffer << 1
 
 	if len(w.Cache) > 32 {
 		w.Cache = w.Cache[1:]
-		w.CacheInput = w.CacheInput[1:]
+		if !w.IsResimulating {
+			w.CacheInput = w.CacheInput[1:]
+		}
 	}
 }
 
 func (w *World) CompareEntitiesAtTick(tick int64, tempEntity *Entity) (same bool) {
-	diff := int(w.CurrentTick - tick)
+	if w.CurrentTick == tick {
+		return w.Entities[tempEntity.Id].CompareTo(tempEntity)
+	}
 
-	if (len(w.Cache)-1) - diff > 0 {
-		return w.Cache[(len(w.Cache)-1) - diff][tempEntity.Id].CompareTo(tempEntity)
+	diff := int64(w.CurrentTick - tick)
+	index := w.CurrentTick - diff
+
+	if index > 0 {
+		return w.Cache[index][tempEntity.Id].CompareTo(tempEntity)
 	}
 
 	return true

@@ -17,12 +17,12 @@ type ClientInputPacket struct {
 }
 
 type ServerConnectionHandshakePacket struct {
-	PlayerId uint16
+	PlayerId PlayerId
 }
 
 // Serialized Bytes of the entity and components.
 type NetworkData struct {
-	OwnerId   uint16
+	OwnerId   PlayerId
 	NetworkId uint16
 	PrefabId  uint16
 	Data      map[int][]byte
@@ -31,8 +31,8 @@ type NetworkData struct {
 type WorldStatePacket struct {
 	Tick      int64
 	Destroyed []int
-	Created   []NetworkData
-	Updates   []NetworkData
+	Created   []*NetworkData
+	Updates   []*NetworkData
 }
 
 type ReadSyncUDP interface {
@@ -57,7 +57,8 @@ Network Instance Component
 */
 
 type NetworkInstanceComponent struct {
-	PlayerId PlayerId
+	OwnerId   PlayerId
+	NetworkId uint16
 }
 
 func (*NetworkInstanceComponent) Id() int {
@@ -76,4 +77,65 @@ func (*NetworkInstanceComponent) Clone() Component {
 	return new(NetworkInstanceComponent)
 }
 
-// todo there is an issue with creating client side entities whereby the id will collide with the server id of other network entities.
+
+func (self *NetworkInstanceComponent) Reset(component Component) {
+	if val, ok := component.(*NetworkInstanceComponent); ok {
+		self.OwnerId = val.OwnerId
+	}
+}
+
+/*
+----------------------------------------------------------------------------------------------------------------
+
+NetworkInstanceDataCollectionSystem
+
+----------------------------------------------------------------------------------------------------------------
+*/
+
+type NetworkInstanceDataCollectionSystem struct {
+	NetworkInstances Storage
+	CurrentState     WorldStatePacket
+}
+
+func (self *NetworkInstanceDataCollectionSystem) RemoveFromStorage(entity *Entity) {
+
+}
+
+func (self *NetworkInstanceDataCollectionSystem) Init(w *World) {
+	self.NetworkInstances = NewStorage()
+}
+
+func (self *NetworkInstanceDataCollectionSystem) AddToStorage(entity *Entity) {
+
+	keys := map[int]*Storage{
+		int(NetworkInstanceComponentType): &self.NetworkInstances,
+	}
+
+	AddComponentsToStorage(entity, keys)
+}
+
+func (self *NetworkInstanceDataCollectionSystem) RequiredComponentTypes() []ComponentType {
+	return []ComponentType{NetworkInstanceComponentType}
+}
+
+func (self *NetworkInstanceDataCollectionSystem) UpdateSystem(delta float64, world *World) {
+
+	for entity, _ := range self.NetworkInstances.Components {
+
+		instance := (*self.NetworkInstances.Components[entity]).(*NetworkInstanceComponent)
+		instance.NetworkId = uint16(entity)
+
+		entity := world.Entities[entity]
+
+		data := NetworkData{OwnerId: instance.OwnerId, NetworkId: instance.NetworkId, Data: map[int][]byte{}}
+
+		for _, val := range entity.Components {
+			if syncVar, ok := val.(WriteSyncUDP); ok {
+				syncVar.WriteUDP(&data)
+			}
+		}
+
+		self.CurrentState.Updates = append(self.CurrentState.Updates, &data)
+
+	}
+}
