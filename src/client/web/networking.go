@@ -3,10 +3,12 @@ package web
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"github.com/Banyango/socker"
+	"io-engine-backend/src/client"
 	. "io-engine-backend/src/ecs"
 	"io-engine-backend/src/server"
 	"net/url"
@@ -17,11 +19,16 @@ import (
 
 type ConnectionStateType int
 
+const (
+	CLIENT_TICK_LEAD = 6
+)
+
 type NetworkedClientSystem struct {
 	entities Storage
 
-	PlayerId    PlayerId
 	ConnHandler *socker.SockerClient
+
+	Client client.Client
 
 	done chan struct{}
 	data chan server.WorldStatePacket
@@ -36,8 +43,6 @@ type NetworkedClientSystem struct {
 	WebRTCConnection js.Value
 
 	IsConnected      bool
-	Packets          []*server.WorldStatePacket
-	State            *server.WorldStatePacket
 	mux              sync.Mutex
 	WorldStatePacket []*server.WorldStatePacket
 }
@@ -45,6 +50,8 @@ type NetworkedClientSystem struct {
 func (self *NetworkedClientSystem) Init(w *World) {
 
 	self.ConnHandler = socker.NewClient()
+
+	self.Client = client.Client{}
 
 	// handle init handshake
 	self.ConnHandler.Add(func(message []byte) bool {
@@ -56,11 +63,14 @@ func (self *NetworkedClientSystem) Init(w *World) {
 			log(fmt.Sprintln("Error in handshake packet!"))
 		}
 
-		self.PlayerId = packet.PlayerId
+		self.Client.PlayerId = packet.PlayerId
+		startTick := packet.ServerTick + CLIENT_TICK_LEAD
+		self.Client.StartTick = startTick
+		w.SetToTick(startTick)
 
 		js.Global().Get("console").Call("log", "Creating WebRTC connection...")
 
-		log(fmt.Sprintln("Player Id", self.PlayerId))
+		log(fmt.Sprintln("Player Id", self.Client.PlayerId))
 
 		self.SetupWebRTC()
 
@@ -93,7 +103,7 @@ func (self *NetworkedClientSystem) Init(w *World) {
 			fmt.Println("Error in Packet", err)
 		}
 
-		self.PlayerId = packet.PlayerId
+		self.Client.PlayerId = packet.PlayerId
 
 		return false
 	})
@@ -269,7 +279,6 @@ func (self *NetworkedClientSystem) RemoveFromStorage(entity *Entity) {
 }
 
 func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
-
 	if world.IsResimulating {
 		return
 	}
@@ -278,17 +287,25 @@ func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
 
 		if self.WorldStatePacket != nil && len(self.WorldStatePacket) > 0 {
 			for _, val := range self.WorldStatePacket {
-				log(val)
+				self.Client.HandleWorldStatePacket(val, world)
 			}
+			self.WorldStatePacket = self.WorldStatePacket[:0]
 		}
 
-		log("Sending input")
 		if world.Input != nil && world.Input.Player[0] != nil {
-			jsBuf := js.TypedArrayOf(world.Input.Player[0].ToBytes())
+			byteArray := make([]byte, 9)
+			binary.LittleEndian.PutUint64(byteArray, uint64(world.CurrentTick))
+			byteArray[8] = world.Input.Player[0].ToBytes()[0]
+			jsBuf := js.TypedArrayOf(byteArray)
 			self.WebRTCConnection.Get("sendChannel").Call("send", jsBuf)
 			jsBuf.Release()
 		}
 	}
+}
+
+func logJson(s string, obj interface{}) {
+	marshal, _ := json.Marshal(obj)
+	log(s, string(marshal))
 }
 
 func (self *NetworkedClientSystem) IsDataChannelConnected() bool {

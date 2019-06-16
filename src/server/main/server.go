@@ -23,11 +23,13 @@ func main() {
 	fmt.Println("Creating World.")
 	w := ecs.NewWorld()
 
+	netInputBuffer := new(server.NetworkInputFutureCollectionSystem)
 	movement := new(game.KeyboardMovementSystem)
 	collision := new(game.CollisionSystem)
 	spawn := new(game.SpawnSystem)
 	networkCollect := new(server.NetworkInstanceDataCollectionSystem)
 
+	w.AddSystem(netInputBuffer)
 	w.AddSystem(movement)
 	w.AddSystem(collision)
 	w.AddSystem(spawn)

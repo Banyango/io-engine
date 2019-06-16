@@ -32,17 +32,15 @@ func main() {
 	collision := new(game.CollisionSystem)
 	movement  := new(client.ClientMovementSystem)
 	netClient := new(web.NetworkedClientSystem)
-	debugClient := new(web.DebugSystem)
-	//clientData := new(client.ClientNetworkDataSystem)
+	//debugClient := new(web.DebugSystem)
 
 	renderer := new(web.CanvasRenderSystem)
 
 	w.AddSystem(input)
-	w.AddSystem(collision)
 	w.AddSystem(movement)
+	w.AddSystem(collision)
 	w.AddSystem(netClient)
-	w.AddSystem(debugClient)
-	//w.AddSystem(clientData)
+	//w.AddSystem(debugClient)
 
 	w.AddRenderer(renderer)
 

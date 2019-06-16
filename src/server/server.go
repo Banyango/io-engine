@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
@@ -119,7 +120,7 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 
 	clientConn.WSConnHandler.Add(func(message []byte) bool {
 		fmt.Println("Sending Buffered Entities to -> player ", clientConn.PlayerId)
-		clientConn.SendHandshakePacket()
+		clientConn.SendHandshakePacket(self.World.CurrentTick)
 		return true
 	})
 
@@ -200,8 +201,8 @@ func (self *Server) HandleIncomingData(delta float64) {
 			select {
 			case message, ok := <-client.UdpIn:
 				if ok {
-					// Handle input bytes from client
-					self.World.Input.Player[PlayerId(client.PlayerId)].InputFromBytes(message[0])
+					tick := binary.LittleEndian.Uint64(message)
+					self.World.SetFutureInput(int64(tick), message[8], client.PlayerId)
 				}
 			default:
 			}
@@ -218,9 +219,11 @@ func (self *Server) SendNetworkData(delta float64) {
 	}
 
 	var udpBytesToWrite []byte
-
 	var gameStateBuffer bytes.Buffer
 	enc := gob.NewEncoder(&gameStateBuffer)
+
+	self.CurrentState.Tick = self.World.CurrentTick
+
 	if err := enc.Encode(self.CurrentState); err != nil {
 		fmt.Printf("Encoding Failed")
 		return
@@ -377,10 +380,11 @@ func (self *ClientConnection) HandleSignal(data []byte) {
 	}
 }
 
-func (self *ClientConnection) SendHandshakePacket() {
+func (self *ClientConnection) SendHandshakePacket(tick int64) {
 
 	networkPacket := ServerConnectionHandshakePacket{
 		PlayerId: self.PlayerId,
+		ServerTick:tick,
 	}
 
 	var buf bytes.Buffer

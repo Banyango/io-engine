@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/goburrow/dynamic"
 	"reflect"
+	"sort"
 	"strconv"
 	"sync"
 )
@@ -139,6 +140,7 @@ type World struct {
 	ToDestroy []int64
 
 	Input *InputController
+	Future []*BufferedInput
 
 	TimeElapsed      int64
 	LastFrameTime    int64
@@ -368,6 +370,10 @@ func (w *World) RemoveEntity(id int64) {
 
 func (w *World) ResetToTick(tick int64) {
 
+	if tick == w.CurrentTick {
+		return
+	}
+
 	diff := int(w.CurrentTick - tick)
 
 	if (len(w.Cache)) - int(diff) > 0 {
@@ -413,11 +419,11 @@ func (w *World) Resimulate (tick int64) {
 
 	diff := w.CurrentTick - tick
 
-	index := w.CurrentTick - diff
+	index := len(w.CacheInput) - int(diff)
 
 	w.IsResimulating = true
 	for i := int64(0); i < w.CurrentTick-1; i++ {
-		clone := w.CacheInput[index+i].Clone()
+		clone := w.CacheInput[index].Clone()
 		w.Input = &clone
 		w.Update(FIXED_DELTA)
 	}
@@ -463,4 +469,39 @@ func (w *World) CompareEntitiesAtTick(tick int64, tempEntity *Entity) (same bool
 	}
 
 	return true
+}
+
+func (w *World) SetToTick(tick int64) {
+	w.Cache = w.Cache[:0]
+	w.CacheInput = w.CacheInput[:0]
+	w.CurrentTick = tick
+
+	for i := 0; i < MAX_CACHE_SIZE; i++ {
+		w.CacheState()
+	}
+}
+
+func (w *World) SetFutureInput(tick int64, inputBytes byte, id PlayerId) {
+
+	index := -1
+
+	for i := range w.Future {
+		if w.Future[i].Tick == tick {
+			index = i
+			break
+		}
+	}
+
+	if index >= 0 {
+		w.Future[index].Bytes[id] = inputBytes
+	} else {
+		buffer := BufferedInput{Tick:tick, Bytes: map[PlayerId]byte{id:inputBytes}}
+
+		w.Future = append(w.Future, &buffer)
+
+		sort.SliceStable(w.Future, func(i, j int) bool {
+			return w.Future[i].Tick < w.Future[i].Tick
+		})
+	}
+
 }

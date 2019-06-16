@@ -10,6 +10,11 @@ type InputController struct {
 	Player map[PlayerId]*Input
 }
 
+type BufferedInput struct {
+	Tick int64
+	Bytes map[PlayerId]byte
+}
+
 func (self *InputController) Clone() InputController {
 	ic := InputController{}
 

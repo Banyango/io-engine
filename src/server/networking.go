@@ -17,7 +17,8 @@ type ClientInputPacket struct {
 }
 
 type ServerConnectionHandshakePacket struct {
-	PlayerId PlayerId
+	PlayerId   PlayerId
+	ServerTick int64
 }
 
 // Serialized Bytes of the entity and components.
@@ -137,5 +138,43 @@ func (self *NetworkInstanceDataCollectionSystem) UpdateSystem(delta float64, wor
 
 		self.CurrentState.Updates = append(self.CurrentState.Updates, &data)
 
+	}
+}
+
+/*
+----------------------------------------------------------------------------------------------------------------
+
+NetworkInputFutureCollectionSystem
+
+----------------------------------------------------------------------------------------------------------------
+*/
+
+type NetworkInputFutureCollectionSystem struct {
+
+}
+
+func (self *NetworkInputFutureCollectionSystem) RemoveFromStorage(entity *Entity) {
+
+}
+
+func (self *NetworkInputFutureCollectionSystem) Init(w *World) {
+
+}
+
+func (self *NetworkInputFutureCollectionSystem) AddToStorage(entity *Entity) {
+
+}
+
+func (self *NetworkInputFutureCollectionSystem) RequiredComponentTypes() []ComponentType {
+	return []ComponentType{}
+}
+
+func (self *NetworkInputFutureCollectionSystem) UpdateSystem(delta float64, world *World) {
+	for i := range world.Future {
+		if world.Future[i].Tick < world.CurrentTick {
+			for id, inputBytes := range world.Future[i].Bytes {
+				world.Input.Player[id].InputFromBytes(inputBytes)
+			}
+		}
 	}
 }

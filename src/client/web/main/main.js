@@ -16,8 +16,8 @@ class WebRTCConnection {
         console.log("[[js]: peer connection init]");
 
         this.sendChannel = this.pc.createDataChannel('foo', {
-            ordered:false,
-            maxRetransmits:1,
+            // ordered:false,
+            // maxRetransmits:1,
         });
         this.sendChannel.binaryType = 'arraybuffer';
 

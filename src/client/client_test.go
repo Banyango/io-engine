@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/base64"
 	"github.com/stretchr/testify/assert"
 	"io-engine-backend/src/ecs"
 	"io-engine-backend/src/game"
@@ -99,6 +100,30 @@ func TestRunClient(t *testing.T) {
 	assert.Equal(t, 2, position.Position.X())
 	assert.Equal(t, 2, position.Position.Y())
 
+}
+
+func TestRunClientFromRealTest(t *testing.T) {
+
+	world, client := createWorld()
+
+	packet := server.WorldStatePacket{Tick:1244}
+
+	world.SetToTick(1165)
+
+	for i := 0; i < 83; i++ {
+		world.Update(0.016)
+	}
+
+	assert.Equal(t, int64(1248), world.CurrentTick)
+
+	bytes, _ := base64.StdEncoding.DecodeString("GP+NAwEC/44AAQIBAVgBBAABAVkBBAAAAAP/jgA=")
+	data := server.NetworkData{OwnerId: 0, NetworkId: 0, PrefabId:0, Data: map[int][]byte{0:bytes}}
+
+	packet.Created = append(packet.Created, &data)
+
+	client.HandleWorldStatePacket(&packet, world)
+
+	assert.Equal(t, 1, len(world.Entities))
 }
 
 func TestRunClientUpdateAndCreate(t *testing.T) {

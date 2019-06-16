@@ -49,7 +49,6 @@ func (self *ClientMovementSystem) RequiredComponentTypes() []ComponentType {
 func (self *ClientMovementSystem) UpdateSystem(delta float64, world *World) {
 
 	global := world.Input.Player[0]
-
 	for entity, _ := range self.collisionComponents.Components {
 
 		arcade := (*self.arcadeComponents.Components[entity]).(*ArcadeMovementComponent)
