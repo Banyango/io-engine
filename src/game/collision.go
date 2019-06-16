@@ -6,8 +6,8 @@ import (
 	. "io-engine-backend/src/ecs"
 	"io-engine-backend/src/math"
 	"io-engine-backend/src/server"
+	math2 "math"
 )
-
 
 /*
 ----------------------------------------------------------------------------------------------------------------
@@ -15,11 +15,10 @@ Collision System
 ----------------------------------------------------------------------------------------------------------------
 */
 
-
 type CollisionSystem struct {
 	positionComponents  Storage
 	collisionComponents Storage
-	space *resolv.Space
+	space               *resolv.Space
 }
 
 func (self *CollisionSystem) Init(w *World) {
@@ -47,7 +46,7 @@ func (self *CollisionSystem) UpdateFrequency() int {
 
 func (self *CollisionSystem) RemoveFromStorage(entity *Entity) {
 	storages := map[int]*Storage{
-		int(PositionComponentType): &self.positionComponents,
+		int(PositionComponentType):  &self.positionComponents,
 		int(CollisionComponentType): &self.collisionComponents,
 	}
 	RemoveComponentsFromStorage(entity, storages)
@@ -106,11 +105,10 @@ func (self *CollisionSystem) UpdateSystem(delta float64, world *World) {
 		}
 
 		//if !collision {
-			position.Position = position.Position.Add(velocityRoundedToPixel)
-			//collider.shape.X = int32(position.Position.X())
-			//collider.shape.Y = int32(position.Position.Y())
+		position.Position = position.Position.Add(velocityRoundedToPixel)
+		//collider.shape.X = int32(position.Position.X())
+		//collider.shape.Y = int32(position.Position.Y())
 		//}
-
 
 	}
 }
@@ -128,7 +126,6 @@ func (self *CollisionSystem) Collides(
 	}
 	return true
 }
-
 
 /*
 ----------------------------------------------------------------------------------------------------------------
@@ -158,7 +155,7 @@ func (self *PositionComponent) ReadUDP(networkPacket *server.NetworkData) {
 }
 
 func (self *PositionComponent) WriteUDP(networkPacket *server.NetworkData) {
-	var data struct{
+	var data struct {
 		X int
 		Y int
 	}
@@ -181,8 +178,6 @@ func (self *PositionComponent) DestroyComponent() {
 
 }
 
-
-
 func (self *PositionComponent) AreEquals(component Component) bool {
 	if val, ok := component.(*PositionComponent); ok {
 		return val.Position.X() == self.Position.X() && val.Position.Y() == self.Position.Y()
@@ -198,7 +193,7 @@ func (self *PositionComponent) Clone() Component {
 }
 
 type CollisionComponent struct {
-	Size     math.VectorInt `json:"size"`
+	Size math.VectorInt `json:"size"`
 
 	Velocity math.Vector
 
@@ -254,7 +249,7 @@ func (c *CollisionComponent) Id() int {
 }
 
 func (c *CollisionComponent) CreateComponent() {
-	c.shape = resolv.NewRectangle(int32(0),int32(0), int32(c.Size.X()), int32(c.Size.Y()))
+	c.shape = resolv.NewRectangle(int32(0), int32(0), int32(c.Size.X()), int32(c.Size.Y()))
 }
 
 func (c *CollisionComponent) DestroyComponent() {
@@ -270,6 +265,49 @@ func (self *CollisionComponent) Reset(component Component) {
 
 func (c *CollisionComponent) Extents(position math.VectorInt) (math.VectorInt, math.VectorInt) {
 	return c.Min(position), c.Max(position)
+}
+
+func (self *CollisionComponent) ReadUDP(networkPacket *server.NetworkData) {
+	var data struct {
+		VelX       float32
+		VelY       float32
+		RemainingX float32
+		RemainingY float32
+		//Collision byte
+	}
+
+	server.DecodeNetworkDataBytes(networkPacket, self.Id(), &data)
+
+	self.Velocity.Set(float64(data.VelX), float64(data.VelY))
+	self.Remaining.Set(float64(data.RemainingX), float64(data.RemainingY))
+}
+
+func (self *CollisionComponent) WriteUDP(networkPacket *server.NetworkData) {
+	var data struct {
+		VelX       float32
+		VelY       float32
+		RemainingX float32
+		RemainingY float32
+		//Collision byte
+	}
+
+	data.VelX = float32(self.Velocity.X())
+	data.VelY = float32(self.Velocity.Y())
+	data.RemainingX = float32(self.Remaining.X())
+	data.RemainingY = float32(self.Remaining.Y())
+
+	server.EncodeNetworkDataBytes(networkPacket, self.Id(), data)
+}
+
+func (self *CollisionComponent) AreEquals(component Component) bool {
+	if val, ok := component.(*CollisionComponent); ok {
+		return math2.Abs(val.Velocity.X()-self.Velocity.X()) < 0.001 &&
+			math2.Abs(val.Velocity.Y()-self.Velocity.Y()) < 0.001 &&
+			math2.Abs(val.Remaining.X()-self.Remaining.X()) < 0.001 &&
+			math2.Abs(val.Remaining.Y()-self.Remaining.Y()) < 0.001
+	} else {
+		return false
+	}
 }
 
 func (c *CollisionComponent) ResetBooleans() {
