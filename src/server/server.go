@@ -114,7 +114,9 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 	clientConn.WSConnHandler = socker.NewClientConnection(conn)
 	clientConn.PlayerId = self.FetchAndIncrementPlayerId()
 
+	self.World.Mux.Lock()
 	self.World.Input.Player[PlayerId(clientConn.PlayerId)] = NewInput()
+	self.World.Mux.Unlock()
 
 	fmt.Println("Client Given playerId: ", clientConn.PlayerId)
 
@@ -163,7 +165,9 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 				networkInstanceComponent.OwnerId = PlayerId(clientConn.PlayerId)
 				entity.Components[int(NetworkInstanceComponentType)] = networkInstanceComponent
 
+				self.World.Mux.Lock()
 				self.World.Spawn(entity)
+				self.World.Mux.Unlock()
 			}
 		}
 

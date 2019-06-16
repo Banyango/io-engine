@@ -45,12 +45,14 @@ type NetworkedClientSystem struct {
 	IsConnected      bool
 	mux              sync.Mutex
 	WorldStatePacket []*server.WorldStatePacket
+
+	NetworkInstance Storage
 }
 
 func (self *NetworkedClientSystem) Init(w *World) {
 
 	self.ConnHandler = socker.NewClient()
-
+	self.NetworkInstance = NewStorage()
 	self.Client = client.Client{}
 
 	// handle init handshake
@@ -267,15 +269,21 @@ func log(str ...interface{}) {
 }
 
 func (self *NetworkedClientSystem) RequiredComponentTypes() []ComponentType {
-	return []ComponentType{}
+	return []ComponentType{NetworkInstanceComponentType}
 }
 
 func (self *NetworkedClientSystem) AddToStorage(entity *Entity) {
-
+	storages := map[int]*Storage{
+		int(NetworkInstanceComponentType): &self.NetworkInstance,
+	}
+	RemoveComponentsFromStorage(entity, storages)
 }
 
 func (self *NetworkedClientSystem) RemoveFromStorage(entity *Entity) {
-
+	storages := map[int]*Storage{
+		int(NetworkInstanceComponentType): &self.NetworkInstance,
+	}
+	RemoveComponentsFromStorage(entity, storages)
 }
 
 func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
@@ -287,7 +295,7 @@ func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
 
 		if self.WorldStatePacket != nil && len(self.WorldStatePacket) > 0 {
 			for _, val := range self.WorldStatePacket {
-				self.Client.HandleWorldStatePacket(val, world)
+				self.Client.HandleWorldStatePacket(val, world, &self.NetworkInstance)
 			}
 			self.WorldStatePacket = self.WorldStatePacket[:0]
 		}

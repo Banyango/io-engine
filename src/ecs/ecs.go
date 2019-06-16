@@ -149,7 +149,7 @@ type World struct {
 
 	Interval   int64
 	PrefabData *PrefabData
-	mux        sync.Mutex
+	Mux        sync.Mutex
 }
 
 func (w *World) Update(delta float64) {

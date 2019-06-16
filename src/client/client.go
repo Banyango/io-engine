@@ -11,7 +11,7 @@ type Client struct {
 	StartTick int64
 }
 
-func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, world *ecs.World) {
+func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, world *ecs.World, NetworkInstances *ecs.Storage) {
 	if packet != nil && world.CurrentTick - packet.Tick < ecs.MAX_CACHE_SIZE {
 		resimulateRequired := false
 
@@ -41,7 +41,20 @@ func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, worl
 			self.createEntities(packet, world)
 
 			for _, update := range packet.Updates {
-				update.UpdateEntity(world.Entities[int64(update.NetworkId)])
+
+				entityId := int64(-1)
+
+				for i := range NetworkInstances.Components {
+					net := (*NetworkInstances.Components[i]).(*server.NetworkInstanceComponent)
+
+					if net.NetworkId == update.NetworkId {
+						entityId = i
+					}
+				}
+
+				if entityId != -1 {
+					update.UpdateEntity(world.Entities[entityId])
+				}
 			}
 
 			world.Resimulate(packet.Tick)
@@ -57,11 +70,14 @@ func (self *Client) destroyEntities(packet *server.WorldStatePacket, world *ecs.
 
 func (self *Client) createEntities(packet *server.WorldStatePacket, world *ecs.World)  {
 	for _, created := range packet.Created {
-		log("Creating entity ", created.PrefabId, " owner ", created.OwnerId)
+		println("Creating entity ", created.PrefabId, " owner ", created.OwnerId)
 		isPeer := self.PlayerId != created.OwnerId
 
 		entity := *created.DeserializeNewEntity(world, isPeer)
-		entity.Id = int64(created.NetworkId)
+		entity.Id = world.FetchAndIncrementId()
+
+		component := server.NetworkInstanceComponent{NetworkId:created.NetworkId, OwnerId:created.OwnerId}
+		entity.Components[int(ecs.NetworkInstanceComponentType)] = &component
 
 		world.AddEntityToWorld(entity)
 	}

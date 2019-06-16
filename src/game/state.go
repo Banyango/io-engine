@@ -1,6 +1,7 @@
 package game
 
 import (
+	"fmt"
 	. "io-engine-backend/src/ecs"
 )
 
@@ -58,8 +59,9 @@ func (self *SpawnSystem) UpdateSystem(delta float64, world *World) {
 
 	if world.ToSpawn != nil {
 		for _, entity := range world.ToSpawn {
-
 			entity.Id = world.FetchAndIncrementId()
+
+			fmt.Println("Adding entity", entity.Id)
 
 			world.AddEntityToWorld(entity)
 
