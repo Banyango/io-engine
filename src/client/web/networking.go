@@ -20,7 +20,7 @@ import (
 type ConnectionStateType int
 
 const (
-	CLIENT_TICK_LEAD = 6
+	CLIENT_TICK_LEAD = 3
 )
 
 type NetworkedClientSystem struct {
@@ -52,7 +52,9 @@ type NetworkedClientSystem struct {
 func (self *NetworkedClientSystem) Init(w *World) {
 
 	self.ConnHandler = socker.NewClient()
+
 	self.NetworkInstance = NewStorage()
+
 	self.Client = client.Client{}
 
 	// handle init handshake
@@ -276,7 +278,7 @@ func (self *NetworkedClientSystem) AddToStorage(entity *Entity) {
 	storages := map[int]*Storage{
 		int(NetworkInstanceComponentType): &self.NetworkInstance,
 	}
-	RemoveComponentsFromStorage(entity, storages)
+	AddComponentsToStorage(entity, storages)
 }
 
 func (self *NetworkedClientSystem) RemoveFromStorage(entity *Entity) {
@@ -309,11 +311,6 @@ func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
 			jsBuf.Release()
 		}
 	}
-}
-
-func logJson(s string, obj interface{}) {
-	marshal, _ := json.Marshal(obj)
-	log(s, string(marshal))
 }
 
 func (self *NetworkedClientSystem) IsDataChannelConnected() bool {

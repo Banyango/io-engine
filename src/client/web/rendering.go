@@ -83,6 +83,10 @@ func (self *CanvasRenderSystem) AddToStorage(entity *Entity) {
 
 func (self *CanvasRenderSystem) UpdateSystem(delta float64, world *World) {
 
+	if world.IsResimulating {
+		return
+	}
+
 	self.ctx.Call("clearRect", 0, 0, self.Width, self.Height)
 
 	for entity, _ := range self.positionComponents.Components {

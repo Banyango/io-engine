@@ -11,7 +11,6 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc"
 	. "io-engine-backend/src/ecs"
-	"log"
 	"net/http"
 	"sync"
 )
@@ -24,13 +23,22 @@ type Server struct {
 	CurrentState WorldStatePacket
 	mux          sync.Mutex
 	PlayerIndex  uint16
+	NetworkIndex uint16
 	Clients      []*ClientConnection
 	deltaCounter float64
 	World        *World
 }
 
 func (self *Server) EntityWasSpawned(entity *Entity) {
-	self.CurrentState.Created = append(self.CurrentState.Created, self.SerializeEntity(entity))
+
+	component := entity.Components[int(NetworkInstanceComponentType)].(*NetworkInstanceComponent)
+
+	networkData := self.SerializeEntity(entity)
+	networkData.NetworkId = component.NetworkId
+	networkData.OwnerId = component.OwnerId
+
+	self.CurrentState.Created = append(self.CurrentState.Created, networkData)
+
 }
 
 func (self *Server) EntityWasDestroyed(entity int64) {
@@ -79,7 +87,7 @@ func (self *NetworkData) UpdateEntity(entity *Entity) {
 
 func (self *NetworkData) DeserializeNewEntity(world *World, isPeer bool) *Entity {
 
-	log.Println("deserializing entity")
+	world.Log.LogInfo("deserializing entity")
 
 	prefabId := int(self.PrefabId)
 
@@ -90,13 +98,14 @@ func (self *NetworkData) DeserializeNewEntity(world *World, isPeer bool) *Entity
 	entity, err := world.PrefabData.CreatePrefab(prefabId)
 
 	if err != nil {
-		fmt.Println("error creating prefab")
+		world.Log.LogInfo("error creating prefab")
 		return nil
 	}
 
 	if entity.Components != nil {
 		for _, comp := range entity.Components {
 			if val, ok := comp.(ReadSyncUDP); ok {
+				world.Log.LogJson("Reading update for", val)
 				val.ReadUDP(self)
 			}
 		}
@@ -163,6 +172,7 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 
 				networkInstanceComponent := new(NetworkInstanceComponent)
 				networkInstanceComponent.OwnerId = PlayerId(clientConn.PlayerId)
+				networkInstanceComponent.NetworkId = self.FetchAndIncrementNetworkId()
 				entity.Components[int(NetworkInstanceComponentType)] = networkInstanceComponent
 
 				self.World.Mux.Lock()
@@ -185,6 +195,10 @@ func (self *Server) Clear() {
 	self.CurrentState.Destroyed = self.CurrentState.Destroyed[:0]
 }
 
+func (self *Server) ClearUpdates() {
+	self.CurrentState.Updates = self.CurrentState.Updates[:0]
+}
+
 func (self *Server) FetchAndIncrementPlayerId() PlayerId {
 
 	temp := self.PlayerIndex
@@ -193,6 +207,16 @@ func (self *Server) FetchAndIncrementPlayerId() PlayerId {
 
 	return PlayerId(temp)
 }
+
+func (self *Server) FetchAndIncrementNetworkId() uint16 {
+
+	temp := self.NetworkIndex
+
+	self.NetworkIndex++
+
+	return temp
+}
+
 
 func (self *Server) HandleIncomingData(delta float64) {
 	for _, client := range self.Clients {
@@ -219,6 +243,7 @@ func (self *Server) SendNetworkData(delta float64) {
 	self.deltaCounter += delta
 
 	if self.deltaCounter < SEND_TICK_RATE {
+		self.ClearUpdates()
 		return
 	}
 

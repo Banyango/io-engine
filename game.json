@@ -5,7 +5,7 @@
     "Player_owned" : {
       "id": "0",
       "components":[
-        {"Type":"PositionComponent", "Position":[0,0] },
+        {"Type":"PositionComponent", "Position":[0,0], "LerpAmount":1 },
         {"Type":"CollisionComponent", "Size":[2,2], "Velocity":[0,0] },
         {"Type":"CircleRendererComponent", "Size":[6,6], "Radius":12.3, "Color":"#001121" },
         {"Type":"ArcadeMovementComponent", "MaxSpeed":[200,200], "Speed":400, "Drag":0.8, "Gravity":[0,0] }
@@ -14,7 +14,8 @@
     "Player_peer" : {
       "id": "1",
       "components":[
-        {"Type":"PositionComponent", "Position":[0,0] },
+        {"Type":"PositionComponent", "Position":[0,0], "LerpAmount":1 },
+        {"Type":"CollisionComponent", "Size":[2,2], "Velocity":[0,0] },
         {"Type":"CircleRendererComponent", "Size":[6,6], "Radius":12.3, "Color":"#001121" }
       ]
     }

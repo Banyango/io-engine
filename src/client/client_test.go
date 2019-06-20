@@ -17,12 +17,12 @@ func TestClient_HandleWorldStatePacketNulls(t *testing.T) {
 	world := ecs.NewWorld()
 	packet := server.WorldStatePacket{}
 
-	client.HandleWorldStatePacket(&packet, world)
+	client.HandleWorldStatePacket(&packet, world, nil)
 
 	packet.Created = []*server.NetworkData{}
 	packet.Updates = []*server.NetworkData{}
 
-	client.HandleWorldStatePacket(&packet, world)
+	client.HandleWorldStatePacket(&packet, world, nil)
 
 }
 
@@ -62,10 +62,11 @@ func (self *testSystem) UpdateSystem(delta float64, world *ecs.World) {
 	}
 }
 
-func createWorld() (*ecs.World, *Client) {
+func createWorld() (*ecs.World, *Client, *ecs.Storage) {
 	gameJson, _ := ioutil.ReadFile("../../game.json");
 	world := ecs.NewWorld()
 	client := Client{PlayerId: 0}
+	storage := ecs.NewStorage()
 
 	collision := new(game.CollisionSystem)
 	movement := new(testSystem)
@@ -77,12 +78,12 @@ func createWorld() (*ecs.World, *Client) {
 
 	world.PrefabData = pm
 
-	return world, &client
+	return world, &client, &storage
 }
 
 func TestRunClient(t *testing.T) {
 
-	world, client := createWorld()
+	world, client, storage := createWorld()
 
 	data := server.NetworkData{OwnerId: 0, NetworkId: 0, Data: map[int][]byte{}}
 	component := game.PositionComponent{Position: math.NewVectorInt(2, 2)}
@@ -91,7 +92,7 @@ func TestRunClient(t *testing.T) {
 	packet := server.WorldStatePacket{}
 	packet.Created = append(packet.Created, &data)
 
-	client.HandleWorldStatePacket(&packet, world)
+	client.HandleWorldStatePacket(&packet, world, storage)
 
 	assert.Equal(t, 1, len(world.Entities))
 
@@ -102,38 +103,18 @@ func TestRunClient(t *testing.T) {
 
 }
 
-func TestRunClientFromRealTest(t *testing.T) {
-
-	world, client := createWorld()
-
-	packet := server.WorldStatePacket{Tick:1244}
-
-	world.SetToTick(1165)
-
-	for i := 0; i < 83; i++ {
-		world.Update(0.016)
-	}
-
-	assert.Equal(t, int64(1248), world.CurrentTick)
-
-	bytes, _ := base64.StdEncoding.DecodeString("GP+NAwEC/44AAQIBAVgBBAABAVkBBAAAAAP/jgA=")
-	data := server.NetworkData{OwnerId: 0, NetworkId: 0, PrefabId:0, Data: map[int][]byte{0:bytes}}
-
-	packet.Created = append(packet.Created, &data)
-
-	client.HandleWorldStatePacket(&packet, world)
-
-	assert.Equal(t, 1, len(world.Entities))
-}
-
 func TestRunClientUpdateAndCreate(t *testing.T) {
 
-	world, client := createWorld()
+	world, client, storage := createWorld()
 
 	// create
 	data := server.NetworkData{OwnerId: 0, NetworkId: 0, Data: map[int][]byte{}}
 	component := game.PositionComponent{Position: math.NewVectorInt(2, 2)}
 	component.WriteUDP(&data)
+
+	assert.Equal(t, 1, len(world.Entities))
+
+	ecs.AddComponentsToStorage(world.Entities[0], map[int]*ecs.Storage{int(ecs.NetworkInstanceComponentType):storage})
 
 	// update
 	data2 := server.NetworkData{OwnerId: 0, NetworkId: 0, Data: map[int][]byte{}}
@@ -144,7 +125,7 @@ func TestRunClientUpdateAndCreate(t *testing.T) {
 	packet.Created = append(packet.Created, &data)
 	packet.Updates = append(packet.Updates, &data2)
 
-	client.HandleWorldStatePacket(&packet, world)
+	client.HandleWorldStatePacket(&packet, world, storage)
 
 	assert.Equal(t, 1, len(world.Entities))
 
@@ -155,14 +136,36 @@ func TestRunClientUpdateAndCreate(t *testing.T) {
 
 }
 
+func TestRunClientUpdateBeforeCreate(t *testing.T) {
+
+	world, client, storage := createWorld()
+
+	// update
+	data2 := server.NetworkData{OwnerId: 0, NetworkId: 0, Data: map[int][]byte{}}
+	component2 := game.PositionComponent{Position: math.NewVectorInt(5, 5)}
+	component2.WriteUDP(&data2)
+
+	packet := server.WorldStatePacket{}
+	packet.Updates = append(packet.Updates, &data2)
+
+	client.HandleWorldStatePacket(&packet, world, storage)
+
+	assert.Equal(t, 0, len(world.Entities))
+
+}
+
 func TestRunClientUpdateAndCreateWithCache(t *testing.T) {
 
-	world, client := createWorld()
+	world, client, storage := createWorld()
 
 	// create
 	data := server.NetworkData{OwnerId: 0, NetworkId: 0, Data: map[int][]byte{}}
 	component := game.PositionComponent{Position: math.NewVectorInt(2, 2)}
 	component.WriteUDP(&data)
+
+	assert.Equal(t, 1, len(world.Entities))
+
+	ecs.AddComponentsToStorage(world.Entities[0], map[int]*ecs.Storage{int(ecs.NetworkInstanceComponentType):storage})
 
 	// update
 	data2 := server.NetworkData{OwnerId: 0, NetworkId: 0, Data: map[int][]byte{}}
@@ -179,7 +182,7 @@ func TestRunClientUpdateAndCreateWithCache(t *testing.T) {
 	world.Update(0.016)
 	world.Update(0.016)
 
-	client.HandleWorldStatePacket(&packet, world)
+	client.HandleWorldStatePacket(&packet, world,storage)
 
 	assert.Equal(t, 1, len(world.Entities))
 
@@ -192,7 +195,7 @@ func TestRunClientUpdateAndCreateWithCache(t *testing.T) {
 
 func TestRunClientUpdateAndCreateWithCacheAndInput(t *testing.T) {
 
-	world, client := createWorld()
+	world, client, storage := createWorld()
 
 	// create
 	data := server.NetworkData{OwnerId: 0, NetworkId: 0, PrefabId: 0, Data: map[int][]byte{}}
@@ -204,7 +207,9 @@ func TestRunClientUpdateAndCreateWithCacheAndInput(t *testing.T) {
 
 	world.Update(0.016)
 
-	client.HandleWorldStatePacket(&packet, world)
+	client.HandleWorldStatePacket(&packet, world, storage)
+
+	ecs.AddComponentsToStorage(world.Entities[0], map[int]*ecs.Storage{int(ecs.NetworkInstanceComponentType):storage})
 
 	world.Input.Player[0].KeyPressed[ecs.Down] = true
 
@@ -228,10 +233,64 @@ func TestRunClientUpdateAndCreateWithCacheAndInput(t *testing.T) {
 	packet2 := server.WorldStatePacket{Tick: 1}
 	packet2.Updates = append(packet.Updates, &data2)
 
-	client.HandleWorldStatePacket(&packet2, world)
+	client.HandleWorldStatePacket(&packet2, world, storage)
 
 	position1 := world.Entities[0].Components[int(ecs.PositionComponentType)].(*game.PositionComponent)
 	assert.Equal(t, 0, position1.Position.X())
 	assert.Equal(t, 0, position1.Position.Y())
 
+}
+
+func TestRunClientFromRealTest(t *testing.T) {
+
+	world, client, storage := createWorld()
+
+	packet := server.WorldStatePacket{Tick: 1244}
+
+	world.SetToTick(1165)
+
+	for i := 0; i < 83; i++ {
+		world.Update(0.016)
+	}
+
+	assert.Equal(t, int64(1248), world.CurrentTick)
+
+	bytes, _ := base64.StdEncoding.DecodeString("GP+NAwEC/44AAQIBAVgBBAABAVkBBAAAAAP/jgA=")
+	data := server.NetworkData{OwnerId: 0, NetworkId: 0, PrefabId: 0, Data: map[int][]byte{0: bytes}}
+
+	packet.Created = append(packet.Created, &data)
+
+	client.HandleWorldStatePacket(&packet, world, storage)
+
+	assert.Equal(t, 1, len(world.Entities))
+}
+
+
+func TestRunClientFromRealTestBothCreateAndUpdate(t *testing.T) {
+
+	world, client, storage := createWorld()
+
+	packet := server.WorldStatePacket{Tick: 1244}
+
+	world.SetToTick(1165)
+
+	for i := 0; i < 83; i++ {
+		world.Update(0.016)
+	}
+
+	assert.Equal(t, int64(1248), world.CurrentTick)
+
+	bytes, _ := base64.StdEncoding.DecodeString("GP+NAwEC/44AAQIBAVgBBAABAVkBBAAAAAP/jgA=")
+	data := server.NetworkData{OwnerId: 0, NetworkId: 0, PrefabId: 0, Data: map[int][]byte{0: bytes}}
+
+	packet.Created = append(packet.Created, &data)
+
+	bytes2, _ := base64.StdEncoding.DecodeString("GP+NAwEC/44AAQIBAVgBBAABAVkBBAAAAAP/jgA=")
+	data2 := server.NetworkData{OwnerId: 0, NetworkId: 0, PrefabId: 0, Data: map[int][]byte{0: bytes2}}
+
+	packet.Updates = append(packet.Updates, &data2)
+
+	client.HandleWorldStatePacket(&packet, world, storage)
+
+	assert.Equal(t, 1, len(world.Entities))
 }

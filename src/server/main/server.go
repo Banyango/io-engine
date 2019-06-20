@@ -23,11 +23,15 @@ func main() {
 	fmt.Println("Creating World.")
 	w := ecs.NewWorld()
 
+	w.Log = new(server.ServerLogger)
+
+	gameServer := server.Server{World: w}
+
 	netInputBuffer := new(server.NetworkInputFutureCollectionSystem)
 	movement := new(game.KeyboardMovementSystem)
 	collision := new(game.CollisionSystem)
 	spawn := new(game.SpawnSystem)
-	networkCollect := new(server.NetworkInstanceDataCollectionSystem)
+	networkCollect := server.NewNetworkInstanceDataCollectionSystem(&gameServer)
 
 	w.AddSystem(netInputBuffer)
 	w.AddSystem(movement)
@@ -45,8 +49,6 @@ func main() {
 
 	w.CurrentFrameTime = time.Now().UnixNano() / int64(time.Millisecond)
 	w.TimeElapsed = 0
-
-	gameServer := server.Server{World: w}
 
 	spawn.AddSpawnListener(&gameServer)
 

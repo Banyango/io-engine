@@ -1,9 +1,10 @@
 package client
 
 import (
-	log2 "github.com/labstack/gommon/log"
+	"encoding/json"
 	"io-engine-backend/src/ecs"
 	"io-engine-backend/src/server"
+	"syscall/js"
 )
 
 type Client struct {
@@ -21,8 +22,8 @@ func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, worl
 			for _, update := range packet.Updates {
 				isPeer := self.PlayerId != update.OwnerId
 				temp := update.DeserializeNewEntity(world, isPeer)
-				temp.Id = int64(update.NetworkId)
-				if !world.CompareEntitiesAtTick(packet.Tick, temp) {
+				temp.Id = self.findEntityIdInStorageForNetworkPacket(NetworkInstances, update)
+				if temp.Id >= 0 && !world.CompareEntitiesAtTick(packet.Tick, temp) {
 					resimulateRequired = true
 					break
 				}
@@ -30,27 +31,22 @@ func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, worl
 		}
 
 		if resimulateRequired {
-			log("Loop {resimulating}")
+			//log("Loop {resimulating}")
 			if world.CurrentTick - packet.Tick > ecs.MAX_CACHE_SIZE {
 				log("skipping packet")
 				return
 			}
 
+			//log("Resetting to tick", packet.Tick, " from:", world.CurrentTick)
 			world.ResetToTick(packet.Tick)
 
+			//log("Creating entities...")
 			self.createEntities(packet, world)
 
+			//logJson("packet", packet)
+			//log("Updating entities...")
 			for _, update := range packet.Updates {
-
-				entityId := int64(-1)
-
-				for i := range NetworkInstances.Components {
-					net := (*NetworkInstances.Components[i]).(*server.NetworkInstanceComponent)
-
-					if net.NetworkId == update.NetworkId {
-						entityId = i
-					}
-				}
+				entityId := self.findEntityIdInStorageForNetworkPacket(NetworkInstances, update)
 
 				if entityId != -1 {
 					update.UpdateEntity(world.Entities[entityId])
@@ -62,6 +58,23 @@ func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, worl
 	}
 }
 
+func (self *Client) findEntityIdInStorageForNetworkPacket(NetworkInstances *ecs.Storage, update *server.NetworkData) int64 {
+	entityId := int64(-1)
+	for i := range NetworkInstances.Components {
+		net := (*NetworkInstances.Components[i]).(*server.NetworkInstanceComponent)
+
+		if net.NetworkId == update.NetworkId {
+			entityId = i
+		}
+	}
+	return entityId
+}
+
+func logJson(s string, obj interface{}) {
+	marshal, _ := json.Marshal(obj)
+	log(s, string(marshal))
+}
+
 func (self *Client) destroyEntities(packet *server.WorldStatePacket, world *ecs.World) {
 	for _, destroyed := range packet.Destroyed {
 		world.RemoveEntity(int64(destroyed))
@@ -69,8 +82,9 @@ func (self *Client) destroyEntities(packet *server.WorldStatePacket, world *ecs.
 }
 
 func (self *Client) createEntities(packet *server.WorldStatePacket, world *ecs.World)  {
-	for _, created := range packet.Created {
-		println("Creating entity ", created.PrefabId, " owner ", created.OwnerId)
+	for i := range packet.Created {
+		created := packet.Created[i]
+		log("Creating entity ", created.PrefabId, " owner ", int(created.OwnerId), "network id", created.NetworkId)
 		isPeer := self.PlayerId != created.OwnerId
 
 		entity := *created.DeserializeNewEntity(world, isPeer)
@@ -79,10 +93,14 @@ func (self *Client) createEntities(packet *server.WorldStatePacket, world *ecs.W
 		component := server.NetworkInstanceComponent{NetworkId:created.NetworkId, OwnerId:created.OwnerId}
 		entity.Components[int(ecs.NetworkInstanceComponentType)] = &component
 
+		world.Log.LogJson("entityId", entity)
+
 		world.AddEntityToWorld(entity)
 	}
 }
 
-func log(s... interface{}) {
-	log2.Info(s...)
+
+
+func log(str ...interface{}) {
+	js.Global().Get("console").Call("log", str...)
 }

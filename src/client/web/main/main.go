@@ -28,6 +28,8 @@ func main() {
 	fmt.Println("Creating World.")
 	w := ecs.NewWorld()
 
+	w.Log = new(web.WebLogger)
+
 	input := new(web.ClientInputSystem)
 	collision := new(game.CollisionSystem)
 	movement  := new(client.ClientMovementSystem)

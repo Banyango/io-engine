@@ -121,6 +121,31 @@ func TestVectorInt_Remainder(t *testing.T) {
 	assert.True(t, float64(0.66) - vector.Y() < 0.0001)
 }
 
+func TestSlerpInt(t *testing.T) {
+	slerpInt := SlerpInt(NewVectorInt(0, 0), NewVectorInt(2, 2), 0.5)
+
+	assert.Equal(t, 1, slerpInt.X())
+	assert.Equal(t, 1, slerpInt.Y())
+}
+
+func TestSlerpIntNeg(t *testing.T) {
+	slerpInt := SlerpInt(NewVectorInt(-2, -2), NewVectorInt(2, 2), 0.5)
+
+	assert.Equal(t, 0, slerpInt.X())
+	assert.Equal(t, 0, slerpInt.Y())
+
+	slerpInt2 := SlerpInt(NewVectorInt(0, 0), NewVectorInt(-2, -2), 0.5)
+
+	assert.Equal(t, -1, slerpInt2.X())
+	assert.Equal(t, -1, slerpInt2.Y())
+
+}
+
+func TestWithinInt(t *testing.T) {
+	assert.True(t, NewVectorInt(2,2).Within(NewVectorInt(3,3), 1))
+	assert.False(t, NewVectorInt(2,2).Within(NewVectorInt(4,4), 1))
+}
+
 //func (self Vector) Remaining() Vector {
 //
 //

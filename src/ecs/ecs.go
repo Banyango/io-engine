@@ -150,6 +150,8 @@ type World struct {
 	Interval   int64
 	PrefabData *PrefabData
 	Mux        sync.Mutex
+
+	Log Logger
 }
 
 func (w *World) Update(delta float64) {
@@ -294,14 +296,22 @@ func (w *World) Destroy(entityId int64) {
 
 func (w *World) AddEntityToWorld(entity Entity) {
 
+	w.Log.LogInfo("Adding Entity to world: ")
+	w.Log.LogJson("world: ", w)
+	w.Log.LogJson("Components", entity.Components)
+
 	for i := range entity.Components {
+		w.Log.LogInfo("Creating comp: ", i)
 		entity.Components[i].CreateComponent()
 	}
 
+	w.Log.LogInfo("systems", len(w.Systems))
+
 	for i := range w.Systems {
 		system := *w.Systems[i]
-
+		w.Log.LogJson("checking system: ", system)
 		if w.DoesEntityHaveAllRequiredComponentTypes(&entity, system.RequiredComponentTypes()) {
+			w.Log.LogInfo("adding to system ", i)
 			system.AddToStorage(&entity)
 		}
 	}
@@ -314,6 +324,7 @@ func (w *World) AddEntityToWorld(entity Entity) {
 		}
 	}
 
+	w.Log.LogInfo("added entity: ", entity.Id)
 	w.Entities[entity.Id] = &entity
 }
 
@@ -422,7 +433,7 @@ func (w *World) Resimulate (tick int64) {
 	index := len(w.CacheInput) - int(diff)
 
 	w.IsResimulating = true
-	for i := int64(0); i < w.CurrentTick-1; i++ {
+	for i := index; i < len(w.CacheInput); i++ {
 		clone := w.CacheInput[index].Clone()
 		w.Input = &clone
 		w.Update(FIXED_DELTA)
@@ -457,14 +468,31 @@ func (w *World) CacheState() {
 }
 
 func (w *World) CompareEntitiesAtTick(tick int64, tempEntity *Entity) (same bool) {
+
+
+	if tempEntity == nil {
+		return false
+	}
+
+	w.Log.LogJson("temp", tempEntity.Id)
 	if w.CurrentTick == tick {
+		if _, ok := w.Entities[tempEntity.Id]; !ok {
+			return false
+		}
+		w.Log.LogJson("entity", w.Entities[tempEntity.Id])
 		return w.Entities[tempEntity.Id].CompareTo(tempEntity)
 	}
 
 	diff := int64(w.CurrentTick - tick)
-	index := w.CurrentTick - diff
+	index := int64(len(w.Cache)) - diff
 
-	if index > 0 {
+	w.Log.LogInfo("index", index)
+	w.Log.LogInfo("cachelen", int64(len(w.Cache)))
+	if index >= 0 && index < int64(len(w.Cache)) {
+		if _, ok := w.Cache[index][tempEntity.Id]; !ok {
+			return false
+		}
+		w.Log.LogJson("entity", w.Cache[index][tempEntity.Id])
 		return w.Cache[index][tempEntity.Id].CompareTo(tempEntity)
 	}
 
@@ -504,4 +532,13 @@ func (w *World) SetFutureInput(tick int64, inputBytes byte, id PlayerId) {
 		})
 	}
 
+}
+
+func (w *World) InputForPlayer(id PlayerId) *Input {
+	w.Mux.Lock()
+	defer w.Mux.Unlock()
+	if input, ok := w.Input.Player[id]; ok {
+		return input
+	}
+	return nil
 }

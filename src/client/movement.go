@@ -22,15 +22,11 @@ func (self *ClientMovementSystem) Init(w *World) {
 }
 
 func (self *ClientMovementSystem) AddToStorage(entity *Entity) {
-	for k := range entity.Components {
-		component := entity.Components[k].(Component)
-
-		if component.Id() == int(CollisionComponentType) {
-			self.collisionComponents.Components[entity.Id] = &component
-		} else if component.Id() == int(ArcadeMovementComponentType) {
-			self.arcadeComponents.Components[entity.Id] = &component
-		}
+	storages := map[int]*Storage{
+		int(CollisionComponentType): &self.collisionComponents,
+		int(ArcadeMovementComponentType): &self.arcadeComponents,
 	}
+	AddComponentsToStorage(entity, storages)
 }
 
 func (self *ClientMovementSystem) RemoveFromStorage(entity *Entity) {

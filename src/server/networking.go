@@ -74,15 +74,16 @@ func (*NetworkInstanceComponent) DestroyComponent() {
 
 }
 
-func (*NetworkInstanceComponent) Clone() Component {
-	return new(NetworkInstanceComponent)
+func (self *NetworkInstanceComponent) Clone() Component {
+	component := new(NetworkInstanceComponent)
+	component.OwnerId = self.OwnerId
+	component.NetworkId = self.NetworkId
+	return component
 }
 
 
 func (self *NetworkInstanceComponent) Reset(component Component) {
-	if val, ok := component.(*NetworkInstanceComponent); ok {
-		self.OwnerId = val.OwnerId
-	}
+
 }
 
 /*
@@ -95,11 +96,21 @@ NetworkInstanceDataCollectionSystem
 
 type NetworkInstanceDataCollectionSystem struct {
 	NetworkInstances Storage
-	CurrentState     WorldStatePacket
+	Server *Server
+}
+
+func NewNetworkInstanceDataCollectionSystem(server *Server) *NetworkInstanceDataCollectionSystem {
+	s := new(NetworkInstanceDataCollectionSystem)
+	s.Server = server
+	return s
 }
 
 func (self *NetworkInstanceDataCollectionSystem) RemoveFromStorage(entity *Entity) {
+	keys := map[int]*Storage{
+		int(NetworkInstanceComponentType): &self.NetworkInstances,
+	}
 
+	RemoveComponentsFromStorage(entity, keys)
 }
 
 func (self *NetworkInstanceDataCollectionSystem) Init(w *World) {
@@ -124,7 +135,6 @@ func (self *NetworkInstanceDataCollectionSystem) UpdateSystem(delta float64, wor
 	for entity, _ := range self.NetworkInstances.Components {
 
 		instance := (*self.NetworkInstances.Components[entity]).(*NetworkInstanceComponent)
-		instance.NetworkId = uint16(entity)
 
 		entity := world.Entities[entity]
 
@@ -136,8 +146,7 @@ func (self *NetworkInstanceDataCollectionSystem) UpdateSystem(delta float64, wor
 			}
 		}
 
-		self.CurrentState.Updates = append(self.CurrentState.Updates, &data)
-
+		self.Server.CurrentState.Updates = append(self.Server.CurrentState.Updates, &data)
 	}
 }
 
@@ -173,7 +182,10 @@ func (self *NetworkInputFutureCollectionSystem) UpdateSystem(delta float64, worl
 	for i := range world.Future {
 		if world.Future[i].Tick < world.CurrentTick {
 			for id, inputBytes := range world.Future[i].Bytes {
-				world.Input.Player[id].InputFromBytes(inputBytes)
+				input := world.InputForPlayer(id)
+				if input != nil {
+					input.InputFromBytes(inputBytes)
+				}
 			}
 		}
 	}
