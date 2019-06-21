@@ -10,7 +10,7 @@ type ServerLogger struct {
 }
 
 func (self *ServerLogger) LogInfo(str ...interface{}) {
-	fmt.Println(str)
+	fmt.Println(str...)
 }
 
 func (self *ServerLogger) LogJson(str string, obj interface{}) {

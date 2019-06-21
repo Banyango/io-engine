@@ -3,9 +3,9 @@ package game
 import (
 	"github.com/SolarLune/resolv/resolv"
 	"github.com/goburrow/dynamic"
-	. "io-engine-backend/src/ecs"
-	"io-engine-backend/src/math"
-	"io-engine-backend/src/server"
+	. "github.com/Banyango/io-engine/src/ecs"
+	"github.com/Banyango/io-engine/src/math"
+	"github.com/Banyango/io-engine/src/server"
 	math2 "math"
 )
 

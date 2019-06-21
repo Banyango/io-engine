@@ -2,8 +2,8 @@ package client
 
 import (
 	"encoding/json"
-	"io-engine-backend/src/ecs"
-	"io-engine-backend/src/server"
+	"github.com/Banyango/io-engine/src/ecs"
+	"github.com/Banyango/io-engine/src/server"
 	"syscall/js"
 )
 

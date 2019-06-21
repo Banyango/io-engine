@@ -3,8 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/gob"
-	"github.com/magiconair/properties/assert"
-	assert2 "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
@@ -32,7 +31,7 @@ func TestEncode(t *testing.T) {
 	enc := gob.NewDecoder(reader)
 	err := enc.Decode(&result)
 	if err != nil {
-		assert2.Fail(t, "error decoding")
+		assert.Fail(t, "error decoding")
 	}
 
 	DecodeNetworkDataBytes(&netData, 0, &result)

@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-	"io-engine-backend/src/ecs"
-	"io-engine-backend/src/game"
-	"io-engine-backend/src/server"
+	"github.com/Banyango/io-engine/src/ecs"
+	"github.com/Banyango/io-engine/src/game"
+	"github.com/Banyango/io-engine/src/server"
 	"io/ioutil"
 	"log"
 	"net/http"

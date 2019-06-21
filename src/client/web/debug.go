@@ -1,8 +1,8 @@
 package web
 
 import (
-	"io-engine-backend/src/ecs"
-	"io-engine-backend/src/game"
+	"github.com/Banyango/io-engine/src/ecs"
+	"github.com/Banyango/io-engine/src/game"
 	"strings"
 	"syscall/js"
 )

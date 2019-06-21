@@ -3,7 +3,7 @@ package web_test
 import (
 	json2 "encoding/json"
 	"github.com/stretchr/testify/assert"
-	"io-engine-backend/src/client"
+	"github.com/Banyango/io-engine/src/client"
 	"testing"
 )
 

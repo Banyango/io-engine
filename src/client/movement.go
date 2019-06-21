@@ -2,9 +2,9 @@ package client
 
 import (
 	"github.com/goburrow/dynamic"
-	. "io-engine-backend/src/ecs"
-	. "io-engine-backend/src/game"
-	"io-engine-backend/src/math"
+	. "github.com/Banyango/io-engine/src/ecs"
+	. "github.com/Banyango/io-engine/src/game"
+	"github.com/Banyango/io-engine/src/math"
 )
 
 type ClientMovementSystem struct {

@@ -10,7 +10,7 @@ import (
 	"github.com/Banyango/socker"
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc"
-	. "io-engine-backend/src/ecs"
+	. "github.com/Banyango/io-engine/src/ecs"
 	"net/http"
 	"sync"
 )

@@ -1,7 +1,7 @@
 package server
 
 import (
-	. "io-engine-backend/src/ecs"
+	. "github.com/Banyango/io-engine/src/ecs"
 )
 
 /*

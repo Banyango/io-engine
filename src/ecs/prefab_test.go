@@ -2,9 +2,9 @@ package ecs_test
 
 import (
 	"github.com/stretchr/testify/assert"
-	"io-engine-backend/src/game"
-	"io-engine-backend/src/math"
-	"io-engine-backend/src/ecs"
+	"github.com/Banyango/io-engine/src/game"
+	"github.com/Banyango/io-engine/src/math"
+	"github.com/Banyango/io-engine/src/ecs"
 	"testing"
 )
 

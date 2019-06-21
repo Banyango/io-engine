@@ -1,7 +1,7 @@
 package ecs
 
 import (
-	"io-engine-backend/src/math"
+	"github.com/Banyango/io-engine/src/math"
 )
 
 type PlayerId uint16

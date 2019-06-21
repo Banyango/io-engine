@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"io-engine-backend/src/client"
-	"io-engine-backend/src/client/web"
-	"io-engine-backend/src/game"
-	"io-engine-backend/src/ecs"
+	"github.com/Banyango/io-engine/src/client"
+	"github.com/Banyango/io-engine/src/client/web"
+	"github.com/Banyango/io-engine/src/game"
+	"github.com/Banyango/io-engine/src/ecs"
 	"os"
 	"syscall/js"
 	"time"
