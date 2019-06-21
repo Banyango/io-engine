@@ -20,10 +20,9 @@ func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, worl
 			resimulateRequired = true
 		} else {
 			for _, update := range packet.Updates {
-				isPeer := self.PlayerId != update.OwnerId
-				temp := update.DeserializeNewEntity(world, isPeer)
-				temp.Id = self.findEntityIdInStorageForNetworkPacket(NetworkInstances, update)
-				if temp.Id >= 0 && !world.CompareEntitiesAtTick(packet.Tick, temp) {
+				id := self.findEntityIdInStorageForNetworkPacket(NetworkInstances, update)
+				// todo rework this. If they're not far apart slerp them. If they are resimulate.
+				if UpdateOrReturnResimulateRequired(id, update, world) {
 					resimulateRequired = true
 					break
 				}
@@ -56,6 +55,20 @@ func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, worl
 			world.Resimulate(packet.Tick)
 		}
 	}
+}
+
+func UpdateOrReturnResimulateRequired(id int64, update *server.NetworkData, world *ecs.World) bool {
+	entity := world.Entities[id]
+
+	if entity.Components != nil {
+		for _, comp := range entity.Components {
+			if val, ok := comp.(server.ReadSyncUDP); ok {
+				val.ReadUDP(update)
+			}
+		}
+	}
+
+	return false
 }
 
 func (self *Client) findEntityIdInStorageForNetworkPacket(NetworkInstances *ecs.Storage, update *server.NetworkData) int64 {

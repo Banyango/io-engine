@@ -19,7 +19,7 @@ type Component interface {
 }
 
 type CompareComponent interface {
-	AreEquals(component Component) bool
+	NeedsResimulation(component Component) int
 }
 
 type ComponentType int
@@ -72,7 +72,7 @@ func (entity *Entity) CompareTo(other *Entity) (same bool){
 
 	for i, comp := range entity.Components {
 		if val, ok := comp.(CompareComponent); ok {
-			if !val.AreEquals(other.Components[i]) {
+			if val.NeedsResimulation(other.Components[i]) > 1 {
 				return false
 			}
 		}
@@ -541,4 +541,8 @@ func (w *World) InputForPlayer(id PlayerId) *Input {
 		return input
 	}
 	return nil
+}
+
+func (w *World) UpdateOrResimulateRequired(tempEntity *Entity) {
+
 }

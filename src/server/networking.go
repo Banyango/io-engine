@@ -36,8 +36,15 @@ type WorldStatePacket struct {
 	Updates   []*NetworkData
 }
 
+type ResimulationRequiredType int
+const(
+	NO_RESIMULATION ResimulationRequiredType = iota
+	LERP_RESIMULATION
+	FULL_RESIMULATION
+)
+
 type ReadSyncUDP interface {
-	ReadUDP(networkPacket *NetworkData)
+	ReadUDP(networkPacket *NetworkData) ResimulationRequiredType
 }
 
 type WriteSyncUDP interface {
