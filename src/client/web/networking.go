@@ -20,7 +20,7 @@ import (
 type ConnectionStateType int
 
 const (
-	CLIENT_TICK_LEAD = 3
+	CLIENT_TICK_LEAD = 10
 )
 
 type NetworkedClientSystem struct {

@@ -130,7 +130,7 @@ func (self *PositionComponent) Reset(component Component) {
 	}
 }
 
-func (self *PositionComponent) ReadUDP(networkPacket *server.NetworkData) ResimulationRequiredType {
+func (self *PositionComponent) ReadUDP(networkPacket *server.NetworkData) {
 	var data struct {
 		X int
 		Y int
@@ -139,7 +139,6 @@ func (self *PositionComponent) ReadUDP(networkPacket *server.NetworkData) Resimu
 	server.DecodeNetworkDataBytes(networkPacket, self.Id(), &data)
 
 	self.Position = math.NewVectorInt(data.X, data.Y)
-	return
 }
 
 func (self *PositionComponent) WriteUDP(networkPacket *server.NetworkData) {
@@ -166,19 +165,12 @@ func (self *PositionComponent) DestroyComponent() {
 
 }
 
-func (self *PositionComponent) NeedsResimulation(component Component) int {
+func (self *PositionComponent) AreEquals(component Component) bool {
 	if val, ok := component.(*PositionComponent); ok {
-		diffX := math2.Abs(float64(val.Position.X() - self.Position.X()))
-		diffY := math2.Abs(float64(val.Position.Y() - self.Position.Y()))
-		if diffX > 10 && diffY > 10 {
-			return 2
-		} else if diffX < 10 && diffY < 10 {
-			return 1
-		} else {
-			return 0
-		}
+		return math2.Abs(float64(val.Position.X()-self.Position.X())) < 2 &&
+			math2.Abs(float64(val.Position.Y()-self.Position.Y())) < 2
 	} else {
-		return 0
+		return false
 	}
 }
 
@@ -269,7 +261,7 @@ func (c *CollisionComponent) Extents(position math.VectorInt) (math.VectorInt, m
 	return c.Min(position), c.Max(position)
 }
 
-func (self *CollisionComponent) ReadUDP(networkPacket *server.NetworkData) ResimulationRequiredType {
+func (self *CollisionComponent) ReadUDP(networkPacket *server.NetworkData) {
 	var data struct {
 		VelX       float32
 		VelY       float32
@@ -282,7 +274,6 @@ func (self *CollisionComponent) ReadUDP(networkPacket *server.NetworkData) Resim
 
 	self.Velocity.Set(float64(data.VelX), float64(data.VelY))
 	self.Remaining.Set(float64(data.RemainingX), float64(data.RemainingY))
-	return
 }
 
 func (self *CollisionComponent) WriteUDP(networkPacket *server.NetworkData) {

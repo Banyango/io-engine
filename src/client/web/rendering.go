@@ -1,13 +1,16 @@
 package web
 
 import (
+	"database/sql/driver"
+	"encoding/json"
 	"fmt"
-	"github.com/goburrow/dynamic"
-	"github.com/lucasb-eyer/go-colorful"
-	. "github.com/Banyango/io-engine/src/ecs"
 	"github.com/Banyango/io-engine/src/game"
+	. "github.com/Banyango/io-engine/src/ecs"
 	"github.com/Banyango/io-engine/src/math"
+	"github.com/goburrow/dynamic"
+	. "github.com/lucasb-eyer/go-colorful"
 	math2 "math"
+	"reflect"
 	"syscall/js"
 )
 
@@ -111,7 +114,7 @@ func (self *CanvasRenderSystem) UpdateSystem(delta float64, world *World) {
 
 type CircleRendererComponent struct {
 	Size   math.Vector
-	Color  colorful.HexColor
+	Color  MyHexColor
 	Radius float32
 }
 
@@ -137,4 +140,54 @@ func (self *CircleRendererComponent) Clone() Component {
 
 func (self *CircleRendererComponent) Reset(component Component) {
 
+}
+
+type MyHexColor Color
+
+type errUnsupportedType struct {
+	got  interface{}
+	want reflect.Type
+}
+
+func (hc *MyHexColor) Scan(value interface{}) error {
+	s, ok := value.(string)
+	if !ok {
+		return errUnsupportedType{got: reflect.TypeOf(value), want: reflect.TypeOf("")}
+	}
+	c, err := Hex(s)
+	if err != nil {
+		return err
+	}
+	*hc = MyHexColor(c)
+	return nil
+}
+
+func (hc *MyHexColor) Value() (driver.Value, error) {
+	return Color(*hc).Hex(), nil
+}
+
+func (e errUnsupportedType) Error() string {
+	return fmt.Sprintf("unsupported type: got %v, want a %s", e.got, e.want)
+}
+
+func (self *MyHexColor) UnmarshalJSON(bytes []byte) error {
+	data := ""
+
+	err := json.Unmarshal(bytes, &data)
+
+	if err != nil {
+		return err
+	}
+
+	color, err := Hex(data)
+
+	if err != nil {
+		return err
+	}
+
+	self.R = color.R
+	self.G = color.G
+	self.B = color.B
+
+	return nil
 }

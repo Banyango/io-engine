@@ -19,7 +19,7 @@ type Component interface {
 }
 
 type CompareComponent interface {
-	NeedsResimulation(component Component) int
+	AreEquals(component Component) bool
 }
 
 type ComponentType int
@@ -51,6 +51,7 @@ Entities
 
 type Entity struct {
 	Id         int64             `json:"id"`
+	Name       string            `json:"name"`
 	Components map[int]Component `json:"components"`
 }
 
@@ -68,11 +69,11 @@ func (entity Entity) Clone() *Entity {
 	return &result
 }
 
-func (entity *Entity) CompareTo(other *Entity) (same bool){
+func (entity *Entity) CompareTo(other *Entity) (same bool) {
 
 	for i, comp := range entity.Components {
 		if val, ok := comp.(CompareComponent); ok {
-			if val.NeedsResimulation(other.Components[i]) > 1 {
+			if !val.AreEquals(other.Components[i]) {
 				return false
 			}
 		}
@@ -82,7 +83,7 @@ func (entity *Entity) CompareTo(other *Entity) (same bool){
 }
 
 func (self *Entity) ResetTo(state *Entity) {
-	for i,val := range self.Components {
+	for i, val := range self.Components {
 		val.Reset(state.Components[i])
 	}
 }
@@ -119,7 +120,7 @@ Globals  - Are static components like input that dont really belong
 */
 
 const (
-	FIXED_DELTA = 0.016
+	FIXED_DELTA    = 0.016
 	MAX_CACHE_SIZE = 32
 )
 
@@ -131,15 +132,15 @@ type World struct {
 
 	Entities map[int64]*Entity
 
-	Cache []map[int64]*Entity
-	CacheInput []*InputController
+	Cache           []map[int64]*Entity
+	CacheInput      []*InputController
 	ValidatedBuffer int32
-	IsResimulating bool
+	IsResimulating  bool
 
-	ToSpawn []Entity
+	ToSpawn   []Entity
 	ToDestroy []int64
 
-	Input *InputController
+	Input  *InputController
 	Future []*BufferedInput
 
 	TimeElapsed      int64
@@ -247,7 +248,7 @@ func (w *World) CreateEntityFromJson(jsonStr string) (e Entity, er error) {
 
 		var comp dynamic.Type
 
-		_ = json.Unmarshal(component, &comp)
+		err = json.Unmarshal(component, &comp)
 
 		v := comp.Value()
 
@@ -255,6 +256,7 @@ func (w *World) CreateEntityFromJson(jsonStr string) (e Entity, er error) {
 			value := v.(Component)
 			entity.Components[value.Id()] = value
 		} else {
+			fmt.Println(err)
 			fmt.Println("Entity {", entity.Id, "}", " Component ignored =", string(component))
 		}
 
@@ -387,7 +389,7 @@ func (w *World) ResetToTick(tick int64) {
 
 	diff := int(w.CurrentTick - tick)
 
-	if (len(w.Cache)) - int(diff) > 0 {
+	if (len(w.Cache))-int(diff) > 0 {
 
 		index := (len(w.Cache)) - diff
 
@@ -426,7 +428,7 @@ func (w *World) ResetToTick(tick int64) {
 
 }
 
-func (w *World) Resimulate (tick int64) {
+func (w *World) Resimulate(tick int64) {
 
 	diff := w.CurrentTick - tick
 
@@ -468,7 +470,6 @@ func (w *World) CacheState() {
 }
 
 func (w *World) CompareEntitiesAtTick(tick int64, tempEntity *Entity) (same bool) {
-
 
 	if tempEntity == nil {
 		return false
@@ -523,7 +524,7 @@ func (w *World) SetFutureInput(tick int64, inputBytes byte, id PlayerId) {
 	if index >= 0 {
 		w.Future[index].Bytes[id] = inputBytes
 	} else {
-		buffer := BufferedInput{Tick:tick, Bytes: map[PlayerId]byte{id:inputBytes}}
+		buffer := BufferedInput{Tick: tick, Bytes: map[PlayerId]byte{id: inputBytes}}
 
 		w.Future = append(w.Future, &buffer)
 
@@ -541,8 +542,4 @@ func (w *World) InputForPlayer(id PlayerId) *Input {
 		return input
 	}
 	return nil
-}
-
-func (w *World) UpdateOrResimulateRequired(tempEntity *Entity) {
-
 }

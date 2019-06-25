@@ -34,17 +34,17 @@ func main() {
 	collision := new(game.CollisionSystem)
 	movement  := new(client.ClientMovementSystem)
 	netClient := new(web.NetworkedClientSystem)
-	//debugClient := new(web.DebugSystem)
+	debugClient := new(web.DebugSystem)
 
 	renderer := new(web.CanvasRenderSystem)
+
+	w.AddRenderer(renderer)
 
 	w.AddSystem(input)
 	w.AddSystem(movement)
 	w.AddSystem(collision)
 	w.AddSystem(netClient)
-	//w.AddSystem(debugClient)
-
-	w.AddRenderer(renderer)
+	w.AddSystem(debugClient)
 
 	pm, err := ecs.NewPrefabManager(string(gameJsonValue), w)
 

@@ -1,15 +1,19 @@
 package web
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/Banyango/io-engine/src/ecs"
-	"github.com/Banyango/io-engine/src/game"
-	"strings"
+	"github.com/Banyango/io-engine/src/math"
+	"reflect"
 	"syscall/js"
 )
 
 type DebugSystem struct {
 	CachedNumOfEntites int
 	domParent          js.Value
+	Entities           []*ecs.Entity
+	delta              float64
 }
 
 func (self *DebugSystem) Init(w *ecs.World) {
@@ -45,68 +49,17 @@ func (self *DebugSystem) createCustomElement(element string, attributes map[stri
 }
 
 func (self *DebugSystem) UpdateSystem(delta float64, world *ecs.World) {
-	if len(world.Entities) != self.CachedNumOfEntites {
-		log("Recreating Entity List...")
-
-		self.CachedNumOfEntites = len(world.Entities)
-
-		ul := NewHTMLComponent("ul", "list-group","")
-
-		log("Adding Entities...")
-
-		for _, val := range world.Entities {
-
-			div := NewHTMLComponent("div","list-group-item","")
-			h4 := NewHTMLComponent("h4","mb-1", strings.Join([]string{"Entity:", string(val.Id)}, " "))
-
-			h4.attachTo(div)
-
-			ulComp := NewHTMLComponent("ul", "list-group", "")
-
-			for _, val2 := range val.Components {
-				if posComp, ok := val2.(*game.PositionComponent); ok {
-					CreatePositionHTMLComponent(posComp.Position.X(), posComp.Position.Y()).attachTo(ulComp)
-				}
-			}
-
-			ulComp.attachTo(div)
-			div.attachTo(ul)
-
-		}
-
-		log("Appending HTML...")
-		self.domParent.Set("innerHTML", "")
-		self.domParent.Call("appendChild", ul.DomValue)
+	if len(world.Entities) != len(self.Entities) {
+		self.UpdateList(world)
+		self.delta = 0
 	}
 
-}
-
-// todo debug system for network state etc. import bootstrap.css and bind the ECS hierarchy to the dom on each update.
-// todo only change the dom if there are entity changes.
-
-type HTMLComponent struct {
-	Tag string
-	Class string
-	InnerText string
-	DomValue js.Value
-}
-
-func NewHTMLComponent(tag string, class string, innerText string) *HTMLComponent {
-	component := HTMLComponent{Tag: tag, Class: class, InnerText:innerText}
-	component.createHTML()
-	return &component
-}
-
-
-func (self *HTMLComponent) createHTML() *HTMLComponent {
-	self.DomValue = js.Global().Get("document").Call("createElement", self.Tag)
-	self.DomValue.Set("className", self.Class)
-	self.DomValue.Set("innerText", self.InnerText)
-	return self
-}
-
-func (self *HTMLComponent) attachTo(parent *HTMLComponent) {
-	parent.DomValue.Call("appendChild", self.DomValue)
+	if self.delta > 0.5 {
+		self.UpdateComponents(world)
+		self.delta = 0
+	} else {
+		self.delta += delta
+	}
 }
 
 func (self *DebugSystem) createChildElement(element string, className string, innerHTML string) js.Value {
@@ -116,18 +69,174 @@ func (self *DebugSystem) createChildElement(element string, className string, in
 	return value
 }
 
-func CreatePositionHTMLComponent(x int, y int) *HTMLComponent {
-	div := NewHTMLComponent("div","list-group-item","")
+func (self *DebugSystem) UpdateComponents(world *ecs.World) {
+	for _, val := range world.Entities {
+		for i := range val.Components {
+			c := self.generateUpdateForComponent(val.Id, val.Components[i])
+			marshal, _ := json.Marshal(dispatchComponent{
+				Type:    "UPDATE_ENTITY",
+				Id:      fmt.Sprint(val.Id),
+				Payload: c,
+			})
 
-	h3 := NewHTMLComponent("h3", "","PositionComponent")
-	//log("x=",x)
-	p := NewHTMLComponent("p","","x="+string(x))
-	p2 := NewHTMLComponent("p","","y="+string(y))
-
-	h3.attachTo(div)
-	p.attachTo(div)
-	p2.attachTo(div)
-
-	return div
+			js.Global().Get("window").Get("store").Call("dispatch", js.Global().Get("JSON").Call("parse", string(marshal)))
+		}
+	}
 }
 
+func (self *DebugSystem) generateUpdateForComponent(entityId int64, comp ecs.Component) components {
+
+	propVal := propValue{}
+
+	s := reflect.ValueOf(comp).Elem()
+	typeOfT := s.Type()
+
+	fields := []propValue{}
+	for i := 0; i < s.NumField(); i++ {
+		f := s.Field(i)
+
+		if f.CanInterface() {
+			if cast, ok := f.Interface().(math.Vector); ok {
+				propVal.Name = typeOfT.Field(i).Name
+				propVal.Value = vecField{
+					T: "vector",
+					X: fmt.Sprint(cast.X()),
+					Y: fmt.Sprint(cast.X()),
+				}
+				fields = append(fields, propVal)
+			}
+			if cast, ok := f.Interface().(math.VectorInt); ok {
+				propVal.Name = typeOfT.Field(i).Name
+				propVal.Value = vecField{
+					T: "vector",
+					X: fmt.Sprint(cast.X()),
+					Y: fmt.Sprint(cast.X()),
+				}
+				fields = append(fields, propVal)
+			}
+			if cast, ok := f.Interface().(float64); ok {
+				propVal.Name = typeOfT.Field(i).Name
+				propVal.Value = floatField{
+					T:   "float",
+					Val: fmt.Sprint(cast),
+				}
+				fields = append(fields, propVal)
+			}
+			if cast, ok := f.Interface().(float32); ok {
+				propVal.Name = typeOfT.Field(i).Name
+				propVal.Value = floatField{
+					T:   "float",
+					Val: fmt.Sprint(cast),
+				}
+				fields = append(fields, propVal)
+			}
+			if cast, ok := f.Interface().(int16); ok {
+				propVal.Name = typeOfT.Field(i).Name
+				propVal.Value = floatField{
+					T:   "float",
+					Val: fmt.Sprint(cast),
+				}
+				fields = append(fields, propVal)
+			}
+			if cast, ok := f.Interface().(int32); ok {
+				propVal.Name = typeOfT.Field(i).Name
+				propVal.Value = floatField{
+					T:   "float",
+					Val: fmt.Sprint(cast),
+				}
+				fields = append(fields, propVal)
+			}
+		}
+	}
+
+	return components{
+		Id:         fmt.Sprint(entityId, comp.Id()),
+		Name:       typeOfT.Name(),
+		Properties: fields,
+	}
+}
+
+func (self *DebugSystem) UpdateList(world *ecs.World) {
+
+	for _, val := range world.Entities {
+		if !self.EntitiesContains(val) {
+			comps := make([]components, 0)
+
+			for i := range val.Components {
+				comps = append(comps, self.generateUpdateForComponent(val.Id, val.Components[i]))
+			}
+
+			marshal, _ := json.Marshal(dispatch{
+				Type: "ADD_ENTITY",
+				Payload: entityDispatch{
+					Id:         fmt.Sprint(val.Id),
+					Name:       val.Name,
+					Components: comps,
+				},
+			})
+
+			js.Global().Get("window").Get("store").Call("dispatch", js.Global().Get("JSON").Call("parse", string(marshal)))
+		}
+	}
+
+	self.Entities = nil
+	for _, val := range world.Entities {
+		self.Entities = append(self.Entities, val)
+	}
+}
+
+func (self *DebugSystem) EntitiesContains(entity *ecs.Entity) bool {
+	for _, val := range self.Entities {
+		if val.Id == entity.Id {
+			return true
+		}
+	}
+	return false
+}
+
+type dispatchNoPayload struct {
+	Type string `json:"type"`
+}
+
+type dispatchComponent struct {
+	Type    string     `json:"type"`
+	Id      string     `json:"id"`
+	Payload components `json:"payload"`
+}
+type dispatch struct {
+	Type    string         `json:"type"`
+	Payload entityDispatch `json:"payload"`
+}
+
+type propValue struct {
+	Name  string      `json:"name"`
+	Value interface{} `json:"value"`
+}
+
+type vecField struct {
+	T string `json:"type"`
+	X string
+	Y string
+}
+
+type floatField struct {
+	T   string `json:"type"`
+	Val string
+}
+
+type components struct {
+	Id         string      `json:"id"`
+	Name       string      `json:"name"`
+	Properties []propValue `json:"properties"`
+}
+
+type entityDispatch struct {
+	Id         string       `json:"id"`
+	Name       string       `json:"name"`
+	Components []components `json:"components"`
+}
+
+type componentDispatch struct {
+	Id         string     `json:"entityId"`
+	Components components `json:"component"`
+}
