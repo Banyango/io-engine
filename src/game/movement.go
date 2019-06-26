@@ -65,28 +65,27 @@ func (self *KeyboardMovementSystem) UpdateSystem(delta float64, world *World) {
 
 		direction := math.NewVector(float64(0), float64(0))
 
-		input := world.Input.Player[net.OwnerId]
+		if input, ok := world.Input.Player[net.OwnerId]; ok {
+			if input.AnyKeyPressed() {
 
-		if input.AnyKeyPressed() {
+				if input.KeyPressed[Up] {
+					direction = direction.Add(math.VectorUp())
+				}
 
-			if input.KeyPressed[Up] {
-				direction = direction.Add(math.VectorUp())
+				if input.KeyPressed[Down] {
+					direction = direction.Add(math.VectorDown())
+				}
+
+				if input.KeyPressed[Left] {
+					direction = direction.Add(math.VectorRight())
+				}
+
+				if input.KeyPressed[Right] {
+					direction = direction.Add(math.VectorLeft())
+				}
+
+				collider.Velocity = collider.Velocity.Add(direction.Scale(arcade.Speed))
 			}
-
-			if input.KeyPressed[Down] {
-				direction = direction.Add(math.VectorDown())
-			}
-
-			if input.KeyPressed[Left] {
-				direction = direction.Add(math.VectorRight())
-			}
-
-			if input.KeyPressed[Right] {
-				direction = direction.Add(math.VectorLeft())
-			}
-
-			collider.Velocity = collider.Velocity.Add(direction.Scale(arcade.Speed))
-
 		}
 
 		collider.Velocity = collider.Velocity.Add(arcade.Gravity).Scale(arcade.Drag).Clamp(arcade.MaxSpeed.Neg(), arcade.MaxSpeed)

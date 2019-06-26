@@ -52,6 +52,8 @@ func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, worl
 			//log("Creating entities...")
 			self.createEntities(packet, world)
 
+			self.destroyEntities(packet, world, networkInstances)
+
 			//logJson("packet", packet)
 			//log("Updating entities...")
 			for _, update := range packet.Updates {
@@ -69,10 +71,20 @@ func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, worl
 	}
 }
 
-func (self *Client) findEntityIdInStorageForNetworkPacket(NetworkInstances *ecs.Storage, update *server.NetworkData) int64 {
+func (self *Client) findEntityIdInStorageForNetworkPacket(NetworkInstances *ecs.Storage, data *server.NetworkData) int64 {
 	for i := range NetworkInstances.Components {
 		net := (*NetworkInstances.Components[i]).(*server.NetworkInstanceComponent)
-		if net.NetworkId == update.NetworkId {
+		if net.NetworkId == data.NetworkId {
+			return i
+		}
+	}
+	return -1
+}
+
+func (self *Client) findEntityIdInStorageForNetworkId(NetworkInstances *ecs.Storage, id uint16) int64 {
+	for i := range NetworkInstances.Components {
+		net := (*NetworkInstances.Components[i]).(*server.NetworkInstanceComponent)
+		if net.NetworkId == id {
 			return i
 		}
 	}
@@ -84,9 +96,12 @@ func logJson(s string, obj interface{}) {
 	log(s, string(marshal))
 }
 
-func (self *Client) destroyEntities(packet *server.WorldStatePacket, world *ecs.World) {
+func (self *Client) destroyEntities(packet *server.WorldStatePacket, world *ecs.World, storage *ecs.Storage) {
 	for _, destroyed := range packet.Destroyed {
-		world.RemoveEntity(int64(destroyed))
+		id := self.findEntityIdInStorageForNetworkId(storage, uint16(destroyed))
+		if id != -1 {
+			world.RemoveEntity(id)
+		}
 	}
 }
 

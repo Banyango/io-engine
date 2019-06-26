@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc"
 	. "github.com/Banyango/io-engine/src/ecs"
+	"github.com/thoas/go-funk"
 	"net/http"
 	"sync"
 )
@@ -43,10 +44,9 @@ func (self *Server) EntityWasSpawned(entity *Entity) {
 }
 
 func (self *Server) EntityWasDestroyed(entity int64) {
-	self.CurrentState.Destroyed = append(self.CurrentState.Destroyed, int(entity))
-
 	if id, found := self.FindNetworkId(entity); found {
 		indexToRemove := -1
+
 		for index ,val := range self.Buffered {
 			if val.NetworkId == id {
 				indexToRemove = index
@@ -57,6 +57,8 @@ func (self *Server) EntityWasDestroyed(entity int64) {
 		if indexToRemove != -1 {
 			self.Buffered = append(self.Buffered[:indexToRemove], self.Buffered[indexToRemove+1:]...)
 		}
+
+		self.CurrentState.Destroyed = append(self.CurrentState.Destroyed, int(id))
 	}
 }
 
@@ -136,6 +138,25 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 	self.AddClient(clientConn)
 
 	clientConn.WSConnHandler = socker.NewClientConnection(conn)
+	clientConn.WSConnHandler.Connection.SetCloseHandler(func(code int, text string) error {
+		self.World.Mux.Lock()
+		defer self.World.Mux.Unlock()
+
+		for id, ent := range self.World.Entities {
+			if comp, ok := ent.Components[int(NetworkInstanceComponentType)]; ok {
+				if net, ok := comp.(*NetworkInstanceComponent); ok {
+					if net.OwnerId == clientConn.PlayerId {
+						self.World.ToDestroy = append(self.World.ToDestroy, id)
+					}
+				}
+			}
+		}
+
+		self.RemoveClient(clientConn)
+		delete (self.World.Input.Player, clientConn.PlayerId)
+
+		return nil
+	})
 	clientConn.PlayerId = self.FetchAndIncrementPlayerId()
 
 	self.World.Mux.Lock()
@@ -304,10 +325,19 @@ func (self *Server) AddClient(connection *ClientConnection) {
 	self.mux.Unlock()
 }
 
+func (self *Server) RemoveClient(connection *ClientConnection) {
+	self.mux.Lock()
+	indexOf := funk.IndexOf(self.Clients, connection)
+	self.Clients = append(self.Clients[:indexOf], self.Clients[indexOf+1:]...)
+	self.mux.Unlock()
+}
+
 func (self *Server) FindNetworkId(entityId int64) (uint16, bool) {
-	if c, ok := self.World.Entities[entityId].Components[int(NetworkInstanceComponentType)]; ok {
-		if netInstance, ok := c.(*NetworkInstanceComponent); ok {
-			return netInstance.NetworkId, true
+	if ent, ok := self.World.Entities[entityId]; ok {
+		if c, ok := ent.Components[int(NetworkInstanceComponentType)]; ok {
+			if netInstance, ok := c.(*NetworkInstanceComponent); ok {
+				return netInstance.NetworkId, true
+			}
 		}
 	}
 	return 0, false

@@ -393,7 +393,7 @@ func (w *World) RemoveEntity(id int64) {
 		system := *w.RenderSystems[i]
 
 		if w.DoesEntityHaveAllRequiredComponentTypes(entity, system.RequiredComponentTypes()) {
-			system.AddToStorage(entity)
+			system.RemoveFromStorage(entity)
 		}
 	}
 
