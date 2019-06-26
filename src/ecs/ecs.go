@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/goburrow/dynamic"
 	"reflect"
-	"sort"
 	"strconv"
 	"sync"
 )
@@ -53,6 +52,7 @@ type Entity struct {
 	Id         int64             `json:"id"`
 	Name       string            `json:"name"`
 	Components map[int]Component `json:"components"`
+	PrefabId   int
 }
 
 func (entity Entity) Clone() *Entity {
@@ -107,6 +107,22 @@ type System interface {
 	RemoveFromStorage(entity *Entity)
 }
 
+/*
+
+Default Logger
+
+*/
+type DefaultLogger struct {
+}
+
+func (DefaultLogger) LogInfo(str ...interface{}) {
+
+}
+
+func (DefaultLogger) LogJson(str string, obj interface{}) {
+
+}
+
 /**
 World
 
@@ -147,12 +163,26 @@ type World struct {
 	LastFrameTime    int64
 	CurrentFrameTime int64
 	CurrentTick      int64
+	LastServerTick   int64
 
 	Interval   int64
 	PrefabData *PrefabData
 	Mux        sync.Mutex
 
-	Log Logger
+	Log    Logger
+	Paused bool
+}
+
+func NewWorld() *World {
+	world := new(World)
+
+	world.Entities = map[int64]*Entity{}
+	world.Input = &InputController{map[PlayerId]*Input{0: NewInput()}}
+	world.Log = DefaultLogger{}
+	world.Interval = 16
+	world.Paused = false
+
+	return world
 }
 
 func (w *World) Update(delta float64) {
@@ -171,17 +201,6 @@ func (self *World) Render() {
 	for _, v := range self.RenderSystems {
 		(*v).UpdateSystem(-1, self)
 	}
-}
-
-func NewWorld() *World {
-	world := new(World)
-
-	world.Entities = map[int64]*Entity{}
-	world.Input = &InputController{map[PlayerId]*Input{0: NewInput()}}
-
-	world.Interval = 16
-
-	return world
 }
 
 func (w *World) AddSystem(system System) {
@@ -378,7 +397,7 @@ func (w *World) RemoveEntity(id int64) {
 		}
 	}
 
-	w.Entities = nil
+	delete (w.Entities, id)
 }
 
 func (w *World) ResetToTick(tick int64) {
@@ -512,6 +531,11 @@ func (w *World) SetToTick(tick int64) {
 
 func (w *World) SetFutureInput(tick int64, inputBytes byte, id PlayerId) {
 
+	if tick < w.CurrentTick {
+		//fmt.Println("Received Past input got ", tick, " at ", w.CurrentTick)
+		return
+	}
+
 	index := -1
 
 	for i := range w.Future {
@@ -525,12 +549,7 @@ func (w *World) SetFutureInput(tick int64, inputBytes byte, id PlayerId) {
 		w.Future[index].Bytes[id] = inputBytes
 	} else {
 		buffer := BufferedInput{Tick: tick, Bytes: map[PlayerId]byte{id: inputBytes}}
-
 		w.Future = append(w.Future, &buffer)
-
-		sort.SliceStable(w.Future, func(i, j int) bool {
-			return w.Future[i].Tick < w.Future[i].Tick
-		})
 	}
 
 }
@@ -542,4 +561,21 @@ func (w *World) InputForPlayer(id PlayerId) *Input {
 		return input
 	}
 	return nil
+}
+
+func (w *World) Reset() {
+	w.Mux.Lock()
+	defer w.Mux.Unlock()
+
+	for _, ent := range w.Entities {
+		w.RemoveEntity(ent.Id)
+	}
+
+	w.Cache = w.Cache[:0]
+	w.CacheInput = w.CacheInput[:0]
+	w.CurrentTick = 0
+	w.LastServerTick = 0
+	w.IdIndex = 0
+	w.ToSpawn = []Entity{}
+	w.ToDestroy = []int64{}
 }

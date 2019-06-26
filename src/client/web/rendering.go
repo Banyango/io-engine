@@ -61,6 +61,8 @@ func (self *CanvasRenderSystem) RemoveFromStorage(entity *Entity) {
 		int(CircleComponentType): &self.circleComponents,
 	}
 	RemoveComponentsFromStorage(entity, storages)
+	self.ctx.Call("clearRect", 0, 0, self.Width, self.Height)
+	self.ctx.Call("save")
 }
 
 

@@ -32,6 +32,8 @@ func (self *PrefabData) CreatePrefab(id int) (Entity, error) {
 			clone.Components[comp.Id()] = comp.Clone().(Component)
 		}
 
+		clone.PrefabId = id
+
 		return clone, nil
 	}
 

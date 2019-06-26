@@ -10,6 +10,6 @@ func AddComponentsToStorage(entity *Entity, storages map[int]*Storage) {
 func RemoveComponentsFromStorage(entity *Entity, storages map[int]*Storage) {
 	id := entity.Id
 	for _, val := range storages {
-		val.Components[id] = nil
+		delete (val.Components,id)
 	}
 }

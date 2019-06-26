@@ -7,10 +7,10 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"github.com/Banyango/socker"
 	"github.com/Banyango/io-engine/src/client"
 	. "github.com/Banyango/io-engine/src/ecs"
 	"github.com/Banyango/io-engine/src/server"
+	"github.com/Banyango/socker"
 	"net/url"
 	"path"
 	"sync"
@@ -18,10 +18,6 @@ import (
 )
 
 type ConnectionStateType int
-
-const (
-	CLIENT_TICK_LEAD = 10
-)
 
 type NetworkedClientSystem struct {
 	entities Storage
@@ -43,6 +39,7 @@ type NetworkedClientSystem struct {
 	WebRTCConnection js.Value
 
 	IsConnected      bool
+	WaitingToResync  bool
 	mux              sync.Mutex
 	WorldStatePacket []*server.WorldStatePacket
 
@@ -57,6 +54,8 @@ func (self *NetworkedClientSystem) Init(w *World) {
 
 	self.Client = client.Client{}
 
+	self.SetupFocusReconnector(w)
+
 	// handle init handshake
 	self.ConnHandler.Add(func(message []byte) bool {
 
@@ -67,10 +66,7 @@ func (self *NetworkedClientSystem) Init(w *World) {
 			log(fmt.Sprintln("Error in handshake packet!"))
 		}
 
-		self.Client.PlayerId = packet.PlayerId
-		startTick := packet.ServerTick + CLIENT_TICK_LEAD
-		self.Client.StartTick = startTick
-		w.SetToTick(startTick)
+		self.Client.HandleHandshake(packet, w)
 
 		js.Global().Get("console").Call("log", "Creating WebRTC connection...")
 
@@ -101,13 +97,19 @@ func (self *NetworkedClientSystem) Init(w *World) {
 
 	// handle normal TCP packets.
 	self.ConnHandler.Add(func(message []byte) bool {
-		var packet server.ServerConnectionHandshakePacket
 
-		if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
-			fmt.Println("Error in Packet", err)
+		if self.WaitingToResync == true {
+			var packet server.ServerConnectionHandshakePacket
+
+			if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
+				log(fmt.Sprintln("Error in handshake packet!"))
+			}
+
+			w.Reset()
+			self.Client.HandleHandshake(packet, w)
+			self.WaitingToResync = false
+			w.Paused = false
 		}
-
-		self.Client.PlayerId = packet.PlayerId
 
 		return false
 	})
@@ -183,23 +185,7 @@ func (self *NetworkedClientSystem) SetupWebRTC() {
 
 	log("Adding onmessage..")
 	self.WebRTCConnection.Get("sendChannel").Set("onmessage", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-
-		dataJSArray := js.Global().Get("Uint8Array").New(args[0].Get("data"))
-		message := make([]byte, args[0].Get("data").Get("byteLength").Int())
-
-		jsBuf := js.TypedArrayOf(message)
-		jsBuf.Call("set", dataJSArray, 0)
-
-		var packet server.WorldStatePacket
-
-		if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
-			fmt.Println("Error in Packet", err)
-		}
-
-		self.WorldStatePacket = append(self.WorldStatePacket, &packet)
-
-		jsBuf.Release()
-
+		self.receiveWebRTCMessage(args)
 		return nil
 
 	}));
@@ -210,24 +196,72 @@ func (self *NetworkedClientSystem) SetupWebRTC() {
 	}))
 
 	self.WebRTCConnection.Get("sendChannel").Set("onopen", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		log("sendChannel opened")
-		self.IsConnected = true
-
-		{
-			// this is a hack and should be changed. advances the server state once the connection is opened.
-			enc := js.Global().Get("TextEncoder").New()
-			result := enc.Call("encode", "{\"event\":\"connectionOpened\"}")
-			self.ws.Call("send", result)
-		}
-
-		enc := js.Global().Get("TextEncoder").New()
-
-		result := enc.Call("encode", "{\"event\":\"spawn\"}")
-
-		self.ws.Call("send", result)
-
+		self.onWebRTCConnectionOpened()
 		return nil
 	}))
+}
+
+/**
+
+
+	Networking Handlers
+
+
+ */
+
+func (self *NetworkedClientSystem) onWebRTCConnectionOpened() {
+	log("sendChannel opened")
+	self.IsConnected = true
+	{
+		// this is a hack and should be changed. advances the server state once the connection is opened.
+		enc := js.Global().Get("TextEncoder").New()
+		result := enc.Call("encode", "{\"event\":\"connectionOpened\"}")
+		self.ws.Call("send", result)
+	}
+	enc := js.Global().Get("TextEncoder").New()
+	result := enc.Call("encode", "{\"event\":\"spawn\"}")
+	self.ws.Call("send", result)
+}
+
+func (self *NetworkedClientSystem) receiveWebRTCMessage(args []js.Value) {
+	dataJSArray := js.Global().Get("Uint8Array").New(args[0].Get("data"))
+	message := make([]byte, args[0].Get("data").Get("byteLength").Int())
+	jsBuf := js.TypedArrayOf(message)
+	jsBuf.Call("set", dataJSArray, 0)
+	var packet server.WorldStatePacket
+	if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
+		fmt.Println("Error in Packet", err)
+	}
+	self.WorldStatePacket = append(self.WorldStatePacket, &packet)
+	jsBuf.Release()
+}
+
+func (self *NetworkedClientSystem) sendInputForCurrentFrame(world *World) {
+	byteArray := make([]byte, 9)
+	binary.LittleEndian.PutUint64(byteArray, uint64(world.CurrentTick))
+	byteArray[8] = world.Input.Player[0].ToBytes()[0]
+	jsBuf := js.TypedArrayOf(byteArray)
+	self.WebRTCConnection.Get("sendChannel").Call("send", jsBuf)
+	jsBuf.Release()
+}
+
+func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
+	if world.IsResimulating {
+		return
+	}
+
+	if self.IsDataChannelConnected() && !self.WaitingToResync {
+		if self.WorldStatePacket != nil && len(self.WorldStatePacket) > 0 {
+			for _, val := range self.WorldStatePacket {
+				self.Client.HandleWorldStatePacket(val, world, &self.NetworkInstance)
+			}
+			self.WorldStatePacket = self.WorldStatePacket[:0]
+		}
+
+		if world.Input != nil && world.Input.Player[0] != nil {
+			self.sendInputForCurrentFrame(world)
+		}
+	}
 }
 
 // Encode encodes the input in base64
@@ -288,31 +322,30 @@ func (self *NetworkedClientSystem) RemoveFromStorage(entity *Entity) {
 	RemoveComponentsFromStorage(entity, storages)
 }
 
-func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
-	if world.IsResimulating {
-		return
-	}
-
-	if self.IsDataChannelConnected() {
-
-		if self.WorldStatePacket != nil && len(self.WorldStatePacket) > 0 {
-			for _, val := range self.WorldStatePacket {
-				self.Client.HandleWorldStatePacket(val, world, &self.NetworkInstance)
-			}
-			self.WorldStatePacket = self.WorldStatePacket[:0]
-		}
-
-		if world.Input != nil && world.Input.Player[0] != nil {
-			byteArray := make([]byte, 9)
-			binary.LittleEndian.PutUint64(byteArray, uint64(world.CurrentTick))
-			byteArray[8] = world.Input.Player[0].ToBytes()[0]
-			jsBuf := js.TypedArrayOf(byteArray)
-			self.WebRTCConnection.Get("sendChannel").Call("send", jsBuf)
-			jsBuf.Release()
-		}
-	}
-}
-
 func (self *NetworkedClientSystem) IsDataChannelConnected() bool {
 	return self.IsConnected
+}
+
+func (self *NetworkedClientSystem) SetupFocusReconnector(world *World) {
+	var onFocus js.Func
+	//var onBlur  js.Func
+
+	onFocus = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		enc := js.Global().Get("TextEncoder").New()
+
+		result := enc.Call("encode", "{\"event\":\"resync\"}")
+
+		self.ws.Call("send", result)
+
+		self.WaitingToResync = true
+
+		return nil
+	})
+
+	//onBlur = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+	//	return nil
+	//})
+
+	js.Global().Get("window").Set("onfocus", onFocus)
+	//js.Global().Get("window").Set("onblur", onBlur)
 }

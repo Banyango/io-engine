@@ -21,6 +21,7 @@ const (
 
 type Server struct {
 	CurrentState WorldStatePacket
+	Buffered	 []*NetworkData
 	mux          sync.Mutex
 	PlayerIndex  uint16
 	NetworkIndex uint16
@@ -30,7 +31,6 @@ type Server struct {
 }
 
 func (self *Server) EntityWasSpawned(entity *Entity) {
-
 	component := entity.Components[int(NetworkInstanceComponentType)].(*NetworkInstanceComponent)
 
 	networkData := self.SerializeEntity(entity)
@@ -39,10 +39,25 @@ func (self *Server) EntityWasSpawned(entity *Entity) {
 
 	self.CurrentState.Created = append(self.CurrentState.Created, networkData)
 
+	self.Buffered = append(self.Buffered, networkData)
 }
 
 func (self *Server) EntityWasDestroyed(entity int64) {
 	self.CurrentState.Destroyed = append(self.CurrentState.Destroyed, int(entity))
+
+	if id, found := self.FindNetworkId(entity); found {
+		indexToRemove := -1
+		for index ,val := range self.Buffered {
+			if val.NetworkId == id {
+				indexToRemove = index
+				break
+			}
+		}
+
+		if indexToRemove != -1 {
+			self.Buffered = append(self.Buffered[:indexToRemove], self.Buffered[indexToRemove+1:]...)
+		}
+	}
 }
 
 func (self *Server) Ws(writer http.ResponseWriter, request *http.Request) {
@@ -131,7 +146,7 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 
 	clientConn.WSConnHandler.Add(func(message []byte) bool {
 		fmt.Println("Sending Buffered Entities to -> player ", clientConn.PlayerId)
-		clientConn.SendHandshakePacket(self.World.CurrentTick)
+		clientConn.SendHandshakePacket(self.World.CurrentTick, self.Buffered)
 		return true
 	})
 
@@ -148,7 +163,7 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 	})
 
 	clientConn.WSConnHandler.Add(func(message []byte) bool {
-		fmt.Println("Spawning -> player", clientConn.PlayerId)
+		fmt.Println("event -> player", clientConn.PlayerId)
 		var handshake map[string]interface{}
 		err := json.Unmarshal(message, &handshake)
 
@@ -173,11 +188,15 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 				networkInstanceComponent := new(NetworkInstanceComponent)
 				networkInstanceComponent.OwnerId = PlayerId(clientConn.PlayerId)
 				networkInstanceComponent.NetworkId = self.FetchAndIncrementNetworkId()
+				networkInstanceComponent.PrefabId = entity.PrefabId
 				entity.Components[int(NetworkInstanceComponentType)] = networkInstanceComponent
 
 				self.World.Mux.Lock()
 				self.World.Spawn(entity)
 				self.World.Mux.Unlock()
+			} else if val == "resync" {
+				fmt.Println("resync -> player ", clientConn.PlayerId)
+				clientConn.SendHandshakePacket(self.World.CurrentTick, self.Buffered)
 			}
 		}
 
@@ -285,6 +304,15 @@ func (self *Server) AddClient(connection *ClientConnection) {
 	self.mux.Unlock()
 }
 
+func (self *Server) FindNetworkId(entityId int64) (uint16, bool) {
+	if c, ok := self.World.Entities[entityId].Components[int(NetworkInstanceComponentType)]; ok {
+		if netInstance, ok := c.(*NetworkInstanceComponent); ok {
+			return netInstance.NetworkId, true
+		}
+	}
+	return 0, false
+}
+
 type ClientConnection struct {
 	PlayerId PlayerId
 	// websocket handler.
@@ -300,7 +328,8 @@ type ClientConnection struct {
 	AnswerSent        bool
 	IsDataChannelOpen bool
 
-	Data NetworkData
+	SimulateFaster bool
+	Data           NetworkData
 }
 
 func (self *ClientConnection) ConnectToDataChannel(data []byte) {
@@ -409,11 +438,12 @@ func (self *ClientConnection) HandleSignal(data []byte) {
 	}
 }
 
-func (self *ClientConnection) SendHandshakePacket(tick int64) {
+func (self *ClientConnection) SendHandshakePacket(tick int64, buffered []*NetworkData) {
 
 	networkPacket := ServerConnectionHandshakePacket{
 		PlayerId: self.PlayerId,
 		ServerTick:tick,
+		State:buffered,
 	}
 
 	var buf bytes.Buffer

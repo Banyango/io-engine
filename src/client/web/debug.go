@@ -25,7 +25,14 @@ func (self *DebugSystem) AddToStorage(entity *ecs.Entity) {
 }
 
 func (self *DebugSystem) RemoveFromStorage(entity *ecs.Entity) {
+	fmt.Println("Removing ", entity.Id)
+	info := map[string]interface{}{
+		"type":"REMOVE_ALL_ENTITY",
+	}
+	marshal, _ := json.Marshal(info)
+	self.Entities = nil
 
+	js.Global().Get("window").Get("store").Call("dispatch", js.Global().Get("JSON").Call("parse", string(marshal)))
 }
 
 func (self *DebugSystem) RequiredComponentTypes() []ecs.ComponentType {
@@ -53,6 +60,8 @@ func (self *DebugSystem) UpdateSystem(delta float64, world *ecs.World) {
 		self.UpdateList(world)
 		self.delta = 0
 	}
+
+	self.UpdateWorldInfo(world)
 
 	if self.delta > 0.5 {
 		self.UpdateComponents(world)
@@ -192,6 +201,18 @@ func (self *DebugSystem) EntitiesContains(entity *ecs.Entity) bool {
 		}
 	}
 	return false
+}
+
+func (self *DebugSystem) UpdateWorldInfo(world *ecs.World) {
+	info := map[string]interface{}{
+		"type":"UPDATE_WORLD_INFO",
+		"payload":map[string]int64 {
+			"currentTick":world.CurrentTick,
+			"lastServerTick":world.LastServerTick,
+		},
+	}
+	marshal, _ := json.Marshal(info)
+	js.Global().Get("window").Get("store").Call("dispatch", js.Global().Get("JSON").Call("parse", string(marshal)))
 }
 
 type dispatchNoPayload struct {

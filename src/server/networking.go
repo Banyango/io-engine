@@ -19,6 +19,7 @@ type ClientInputPacket struct {
 type ServerConnectionHandshakePacket struct {
 	PlayerId   PlayerId
 	ServerTick int64
+	State	[]*NetworkData
 }
 
 // Serialized Bytes of the entity and components.
@@ -34,6 +35,11 @@ type WorldStatePacket struct {
 	Destroyed []int
 	Created   []*NetworkData
 	Updates   []*NetworkData
+}
+
+type ServerResyncHandshake struct {
+	Tick      int64
+	State   []*NetworkData
 }
 
 type ReadSyncUDP interface {
@@ -60,6 +66,7 @@ Network Instance Component
 type NetworkInstanceComponent struct {
 	OwnerId   PlayerId
 	NetworkId uint16
+	PrefabId int
 }
 
 func (*NetworkInstanceComponent) Id() int {
@@ -78,6 +85,7 @@ func (self *NetworkInstanceComponent) Clone() Component {
 	component := new(NetworkInstanceComponent)
 	component.OwnerId = self.OwnerId
 	component.NetworkId = self.NetworkId
+	component.PrefabId = self.PrefabId
 	return component
 }
 
@@ -138,7 +146,12 @@ func (self *NetworkInstanceDataCollectionSystem) UpdateSystem(delta float64, wor
 
 		entity := world.Entities[entity]
 
-		data := NetworkData{OwnerId: instance.OwnerId, NetworkId: instance.NetworkId, Data: map[int][]byte{}}
+		data := NetworkData{
+			OwnerId: instance.OwnerId,
+			NetworkId: instance.NetworkId,
+			PrefabId:uint16(entity.PrefabId),
+			Data: map[int][]byte{},
+		}
 
 		for _, val := range entity.Components {
 			if syncVar, ok := val.(WriteSyncUDP); ok {
@@ -180,7 +193,7 @@ func (self *NetworkInputFutureCollectionSystem) RequiredComponentTypes() []Compo
 
 func (self *NetworkInputFutureCollectionSystem) UpdateSystem(delta float64, world *World) {
 	for i := range world.Future {
-		if world.Future[i].Tick < world.CurrentTick {
+		if world.Future[i].Tick == world.CurrentTick {
 			for id, inputBytes := range world.Future[i].Bytes {
 				input := world.InputForPlayer(id)
 				if input != nil {
@@ -189,4 +202,12 @@ func (self *NetworkInputFutureCollectionSystem) UpdateSystem(delta float64, worl
 			}
 		}
 	}
+
+	futureCopy := []*BufferedInput{}
+	for i := range world.Future {
+		if world.Future[i].Tick > world.CurrentTick {
+			futureCopy = append(futureCopy, world.Future[i])
+		}
+	}
+	world.Future = futureCopy
 }

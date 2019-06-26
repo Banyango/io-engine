@@ -63,6 +63,7 @@ func MainLoopClient(self *ecs.World) {
 	done := make(chan struct{}, 0)
 
 	var renderFrame js.Func
+	var setTimeout js.Func
 
 	self.CurrentFrameTime = time.Now().UnixNano() / int64(time.Millisecond)
 	self.TimeElapsed = 0
@@ -73,24 +74,28 @@ func MainLoopClient(self *ecs.World) {
 		}
 	}()
 
-	renderFrame = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-
-		self.LastFrameTime = self.CurrentFrameTime
-
-		self.CurrentFrameTime = time.Now().UnixNano() / int64(time.Millisecond)
-
-		delta := self.CurrentFrameTime - self.LastFrameTime
-
-		self.TimeElapsed = self.TimeElapsed + delta
-
-		for self.TimeElapsed >= self.Interval {
-			self.Update(0.016)
-			self.TimeElapsed = self.TimeElapsed - self.Interval
+	setTimeout = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		if !self.Paused {
+			self.LastFrameTime = self.CurrentFrameTime
+			self.CurrentFrameTime = time.Now().UnixNano() / int64(time.Millisecond)
+			delta := self.CurrentFrameTime - self.LastFrameTime
+			self.TimeElapsed = self.TimeElapsed + delta
+			for self.TimeElapsed >= self.Interval {
+				self.Update(0.016)
+				self.TimeElapsed = self.TimeElapsed - self.Interval
+			}
 		}
+
+		js.Global().Call("setTimeout", setTimeout, 0.016)
+
+		return nil
+	})
+
+	renderFrame = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 
 		self.Render()
 
-		js.Global().Call("requestAnimationFrame", renderFrame)
+		js.Global().Call("requestAnimationFrame", renderFrame, 0.016)
 
 		return nil
 	})
@@ -98,6 +103,7 @@ func MainLoopClient(self *ecs.World) {
 	defer renderFrame.Release()
 
 	js.Global().Call("requestAnimationFrame", renderFrame)
+	js.Global().Call("setTimeout", setTimeout)
 
 	<-done
 }

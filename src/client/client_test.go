@@ -62,6 +62,30 @@ func (self *testSystem) UpdateSystem(delta float64, world *ecs.World) {
 	}
 }
 
+type testNetworkSystem struct {
+	store ecs.Storage
+}
+
+func (self *testNetworkSystem) Init(w *ecs.World) {
+	self.store = ecs.NewStorage()
+}
+
+func (self *testNetworkSystem) AddToStorage(entity *ecs.Entity) {
+	ecs.AddComponentsToStorage(entity, map[int]*ecs.Storage{int(ecs.NetworkInstanceComponentType):&self.store})
+}
+
+func (self *testNetworkSystem) RequiredComponentTypes() []ecs.ComponentType {
+	return []ecs.ComponentType{ecs.NetworkInstanceComponentType}
+}
+
+func (self *testNetworkSystem) UpdateSystem(delta float64, world *ecs.World) {
+
+}
+
+func (self *testNetworkSystem) RemoveFromStorage(entity *ecs.Entity) {
+
+}
+
 func createWorld() (*ecs.World, *Client, *ecs.Storage) {
 	gameJson, _ := ioutil.ReadFile("../../game.json");
 	world := ecs.NewWorld()
@@ -105,16 +129,15 @@ func TestRunClient(t *testing.T) {
 
 func TestRunClientUpdateAndCreate(t *testing.T) {
 
-	world, client, storage := createWorld()
+	world, client, _ := createWorld()
+
+	networkSystem := new(testNetworkSystem)
+	world.AddSystem(networkSystem)
 
 	// create
 	data := server.NetworkData{OwnerId: 0, NetworkId: 0, Data: map[int][]byte{}}
 	component := game.PositionComponent{Position: math.NewVectorInt(2, 2)}
 	component.WriteUDP(&data)
-
-	assert.Equal(t, 1, len(world.Entities))
-
-	ecs.AddComponentsToStorage(world.Entities[0], map[int]*ecs.Storage{int(ecs.NetworkInstanceComponentType):storage})
 
 	// update
 	data2 := server.NetworkData{OwnerId: 0, NetworkId: 0, Data: map[int][]byte{}}
@@ -125,7 +148,7 @@ func TestRunClientUpdateAndCreate(t *testing.T) {
 	packet.Created = append(packet.Created, &data)
 	packet.Updates = append(packet.Updates, &data2)
 
-	client.HandleWorldStatePacket(&packet, world, storage)
+	client.HandleWorldStatePacket(&packet, world, &networkSystem.store)
 
 	assert.Equal(t, 1, len(world.Entities))
 
@@ -293,4 +316,67 @@ func TestRunClientFromRealTestBothCreateAndUpdate(t *testing.T) {
 	client.HandleWorldStatePacket(&packet, world, storage)
 
 	assert.Equal(t, 1, len(world.Entities))
+}
+
+func TestRunClientFromRealTestMoreComplete(t *testing.T) {
+
+	worldClient, handlerClient, clientStorage := createWorld()
+	worldClient.AddSystem(new(testNetworkSystem))
+
+	handlerClient.PlayerId = 0
+
+	worldServer, _, _ := createWorld()
+	worldServer.AddSystem(new(server.NetworkInputFutureCollectionSystem))
+
+	for i := 0; i < 32; i++ {
+		worldServer.Update(0.016)
+	}
+
+	entity, e := worldServer.PrefabData.CreatePrefab(0)
+	assert.Nil(t, e)
+	netInstance := new(server.NetworkInstanceComponent)
+	netInstance.NetworkId = 0
+	netInstance.OwnerId = 0
+	entity.Components[int(ecs.NetworkInstanceComponentType)] = netInstance
+
+	worldServer.AddEntityToWorld(entity)
+	worldServer.Input.Player[0] = ecs.NewInput()
+
+	handlerClient.HandleHandshake(server.ServerConnectionHandshakePacket{PlayerId:0, ServerTick:worldServer.CurrentTick}, worldClient)
+
+	for i := 0; i < 3; i++ {
+		worldServer.Update(0.016)
+		worldClient.Update(0.016)
+	}
+
+	//create world state packet
+	data := server.NetworkData{OwnerId: 0, NetworkId: 0, Data: map[int][]byte{}}
+	component := game.PositionComponent{Position: math.NewVectorInt(2, 2)}
+	component.WriteUDP(&data)
+
+	// update
+	data2 := server.NetworkData{OwnerId: 0, NetworkId: 0, Data: map[int][]byte{}}
+	component2 := game.PositionComponent{Position: math.NewVectorInt(5, 5)}
+	component2.WriteUDP(&data2)
+
+	packet := server.WorldStatePacket{}
+	packet.Created = append(packet.Created, &data)
+	packet.Updates = append(packet.Updates, &data2)
+
+	handlerClient.HandleWorldStatePacket(&packet, worldClient, clientStorage)
+
+	worldClient.Input.Player[0].KeyPressed[ecs.Down] = true
+	tickInputDown := worldClient.CurrentTick
+	bytesInputDown := worldClient.Input.Player[0].ToBytes()
+	worldClient.Update(0.016)
+	worldServer.Update(0.016)
+
+	worldClient.Update(0.016)
+	worldServer.Update(0.016)
+
+	worldServer.SetFutureInput(tickInputDown, bytesInputDown[0], 0)
+
+	worldClient.Update(0.016)
+	worldServer.Update(0.016)
+	worldServer.SetFutureInput(tickInputDown+1, bytesInputDown[0], 0)
 }
