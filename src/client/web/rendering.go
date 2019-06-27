@@ -4,8 +4,8 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
-	"github.com/Banyango/io-engine/src/game"
 	. "github.com/Banyango/io-engine/src/ecs"
+	"github.com/Banyango/io-engine/src/game"
 	"github.com/Banyango/io-engine/src/math"
 	"github.com/goburrow/dynamic"
 	. "github.com/lucasb-eyer/go-colorful"
@@ -17,6 +17,7 @@ import (
 type CanvasRenderSystem struct {
 	circleComponents   Storage
 	positionComponents Storage
+	lerpingComponents  map[int64]math.Vector
 
 	CanvasElementId string
 	Width           int
@@ -37,6 +38,7 @@ func (self *CanvasRenderSystem) Init(w *World) {
 
 	self.circleComponents = NewStorage()
 	self.positionComponents = NewStorage()
+	self.lerpingComponents = map[int64]math.Vector{}
 
 	self.Width = 600
 	self.Height = 500
@@ -58,13 +60,13 @@ func (self *CanvasRenderSystem) Init(w *World) {
 func (self *CanvasRenderSystem) RemoveFromStorage(entity *Entity) {
 	storages := map[int]*Storage{
 		int(PositionComponentType): &self.positionComponents,
-		int(CircleComponentType): &self.circleComponents,
+		int(CircleComponentType):   &self.circleComponents,
 	}
 	RemoveComponentsFromStorage(entity, storages)
+	delete (self.lerpingComponents, entity.Id)
 	self.ctx.Call("clearRect", 0, 0, self.Width, self.Height)
 	self.ctx.Call("save")
 }
-
 
 func (self *CanvasRenderSystem) RequiredComponentTypes() []ComponentType {
 	return []ComponentType{PositionComponentType, CircleComponentType}
@@ -75,15 +77,14 @@ func (self *CanvasRenderSystem) UpdateFrequency() int {
 }
 
 func (self *CanvasRenderSystem) AddToStorage(entity *Entity) {
-	for k := range entity.Components {
-		component := entity.Components[k].(Component)
 
-		if component.Id() == int(PositionComponentType) {
-			self.positionComponents.Components[entity.Id] = &component
-		} else if component.Id() == int(CircleComponentType) {
-			self.circleComponents.Components[entity.Id] = &component
-		}
-	}
+	AddComponentsToStorage(entity, map[int]*Storage{
+		int(PositionComponentType):&self.positionComponents,
+		int(CircleComponentType):&self.circleComponents,
+	})
+
+	position := (*self.positionComponents.Components[entity.Id]).(*game.PositionComponent)
+	self.lerpingComponents[entity.Id] = math.NewVectorInt(position.Position.X(), position.Position.Y()).ToVec()
 }
 
 func (self *CanvasRenderSystem) UpdateSystem(delta float64, world *World) {
@@ -99,13 +100,22 @@ func (self *CanvasRenderSystem) UpdateSystem(delta float64, world *World) {
 		circle := (*self.circleComponents.Components[entity]).(*CircleRendererComponent)
 		position := (*self.positionComponents.Components[entity]).(*game.PositionComponent)
 
+		vector := self.lerpingComponents[entity]
+		x := vector.X()
+		y := vector.Y()
+
+		X := math.Lerp(x, float64(position.Position.X()), 0.25)
+		Y := math.Lerp(y, float64(position.Position.Y()), 0.25)
+		self.lerpingComponents[entity] = math.NewVector(X, Y)
+
 		color, e := circle.Color.Value()
 
 		if e == nil {
 			self.ctx.Set("fillStyle", color)
 		}
 
-		self.ctx.Call("translate", position.Position.X(), position.Position.Y())
+		js.Global().Get("console").Call("log", position.Position.X(), " ", position.Position.Y())
+		self.ctx.Call("translate", X, Y)
 		self.ctx.Call("beginPath")
 		self.ctx.Call("arc", 0, 0, circle.Radius, 0, 2*math2.Pi)
 		self.ctx.Call("fill")

@@ -184,7 +184,7 @@ func (self Vector) Neg() Vector {
 }
 
 func (self Vector) Lerp(other Vector, time float64) Vector {
-	return NewVector(lerp(other.position[0], self.position[0], time), lerp(other.position[1], self.position[1], time))
+	return NewVector(Lerp(other.position[0], self.position[0], time), Lerp(other.position[1], self.position[1], time))
 }
 
 func (self Vector) Normalize() Vector {
@@ -206,7 +206,7 @@ func (self *Vector) ToVecInt() VectorInt {
 	return NewVectorInt(int(math.Round(self.position[0])), int(math.Round(self.position[1])))
 }
 
-func lerp(v0 float64, v1 float64, t float64) float64 {
+func Lerp(v0 float64, v1 float64, t float64) float64 {
 	return v0*(1.0-t) + v1*t
 }
 
