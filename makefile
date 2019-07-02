@@ -14,10 +14,11 @@ clean:
 create-dist:
 	@ mkdir dist
 
-run-server: clean create-dist compile-wasm
+run-server: clean create-dist compile-wasm copy-web-template
 	$(info Running Server on Port :8081)
 	@ go build -o ./dist/server ./src/server/main
-	@ (cd ./; ./dist/server)
+	@ cp ./game.json ./dist/
+	@ (cd ./dist; ./server)
 
 build: clean create-dist compile-wasm copy-web-template
 	$(info Building...)

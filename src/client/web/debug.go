@@ -110,7 +110,7 @@ func (self *DebugSystem) generateUpdateForComponent(entityId int64, comp ecs.Com
 				propVal.Value = vecField{
 					T: "vector",
 					X: fmt.Sprint(cast.X()),
-					Y: fmt.Sprint(cast.X()),
+					Y: fmt.Sprint(cast.Y()),
 				}
 				fields = append(fields, propVal)
 			}
@@ -119,7 +119,7 @@ func (self *DebugSystem) generateUpdateForComponent(entityId int64, comp ecs.Com
 				propVal.Value = vecField{
 					T: "vector",
 					X: fmt.Sprint(cast.X()),
-					Y: fmt.Sprint(cast.X()),
+					Y: fmt.Sprint(cast.Y()),
 				}
 				fields = append(fields, propVal)
 			}
