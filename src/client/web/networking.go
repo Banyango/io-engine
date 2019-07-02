@@ -112,6 +112,7 @@ func (self *NetworkedClientSystem) Init(w *World) {
 	})
 
 	go func() {
+		// todo this needs to match the server address. Maybe build a service?
 		u, err := url.Parse("ws://localhost:8081")
 
 		if err != nil {

@@ -1,0 +1,11 @@
+version: "3.3"
+
+services:
+  edge:
+    image: nginx:1.17.1
+    ports:
+      - 8081:80
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+  game-server:
+    image: io-engine:latest
