@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/Banyango/io-engine/src/ecs"
 	"github.com/Banyango/io-engine/src/server"
+	"github.com/thoas/go-funk"
 	"syscall/js"
 )
 
@@ -16,16 +17,20 @@ type Client struct {
 
 func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, world *ecs.World, networkInstances *ecs.Storage) {
 
-	if packet == nil || packet.Tick > world.CurrentTick {
+	if packet == nil {
 		return
 	}
 
-	if world.CurrentTick - packet.Tick < ecs.MAX_CACHE_SIZE {
+	if packet.Tick > world.CurrentTick {
+		self.HandleResync(packet, world)
+	}
+
+	if world.CurrentTick-packet.Tick < ecs.MAX_CACHE_SIZE {
 		resimulateRequired := false
 
 		world.LastServerTick = packet.Tick
 
-		if (len(packet.Created) > 0 || len(packet.Destroyed) > 0) && packet.Tick <= world.CurrentTick {
+		if len(packet.Created) > 0 || len(packet.Destroyed) > 0 {
 			resimulateRequired = true
 		} else {
 			for _, update := range packet.Updates {
@@ -40,8 +45,8 @@ func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, worl
 		}
 
 		if resimulateRequired {
-			log("Loop {resimulating}")
-			if world.CurrentTick - packet.Tick > ecs.MAX_CACHE_SIZE {
+			//log("Loop {resimulating}")
+			if world.CurrentTick-packet.Tick > ecs.MAX_CACHE_SIZE {
 				log("skipping packet")
 				return
 			}
@@ -51,8 +56,6 @@ func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, worl
 
 			//log("Creating entities...")
 			self.createEntities(packet, world)
-
-			self.destroyEntities(packet, world, networkInstances)
 
 			//logJson("packet", packet)
 			//log("Updating entities...")
@@ -66,8 +69,30 @@ func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, worl
 				}
 			}
 
+			for _, comp := range networkInstances.Components {
+				if net, ok := (*comp).(*server.NetworkInstanceComponent); ok {
+					found := funk.Find(packet.Updates, func(d *server.NetworkData) bool {
+						if d.NetworkId == net.NetworkId {
+							return true
+						}
+						return false
+					})
+
+					if found == nil {
+						id := self.findEntityIdInStorageForNetworkId(networkInstances, net.NetworkId)
+						if id != -1 {
+							world.RemoveEntity(id)
+						}
+					}
+				}
+			}
+
+			self.destroyEntities(packet, world, networkInstances)
+
 			world.Resimulate(packet.Tick)
 		}
+	} else {
+
 	}
 }
 
@@ -99,13 +124,14 @@ func logJson(s string, obj interface{}) {
 func (self *Client) destroyEntities(packet *server.WorldStatePacket, world *ecs.World, storage *ecs.Storage) {
 	for _, destroyed := range packet.Destroyed {
 		id := self.findEntityIdInStorageForNetworkId(storage, uint16(destroyed))
+		log("removing entity:",id)
 		if id != -1 {
 			world.RemoveEntity(id)
 		}
 	}
 }
 
-func (self *Client) createEntities(packet *server.WorldStatePacket, world *ecs.World)  {
+func (self *Client) createEntities(packet *server.WorldStatePacket, world *ecs.World) {
 	for i := range packet.Created {
 		created := packet.Created[i]
 		self.createEntity(created, world)
@@ -117,7 +143,7 @@ func (self *Client) createEntity(data *server.NetworkData, world *ecs.World) {
 	isPeer := self.PlayerId != data.OwnerId
 	entity := *data.DeserializeNewEntity(world, isPeer)
 	entity.Id = world.FetchAndIncrementId()
-	component := server.NetworkInstanceComponent{NetworkId: data.NetworkId, OwnerId: data.OwnerId}
+	component := server.NetworkInstanceComponent{NetworkId: data.NetworkId, OwnerId: data.OwnerId, PrefabId: int(data.PrefabId)}
 	entity.Components[int(ecs.NetworkInstanceComponentType)] = &component
 	world.Log.LogJson("entityId", entity)
 	world.AddEntityToWorld(entity)
@@ -132,6 +158,11 @@ func (self *Client) HandleHandshake(packet server.ServerConnectionHandshakePacke
 	//for _, state := range packet.State {
 	//	self.createEntity(state, world)
 	//}
+}
+
+func (self *Client) HandleResync(packet *server.WorldStatePacket, world *ecs.World) {
+	world.Reset()
+	world.SetToTick(packet.Tick + CLIENT_TICK_LEAD)
 }
 
 func log(str ...interface{}) {

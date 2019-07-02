@@ -136,8 +136,11 @@ Globals  - Are static components like input that dont really belong
 */
 
 const (
+	MAX_CACHE_SIZE = 200
+)
+
+var (
 	FIXED_DELTA    = 0.016
-	MAX_CACHE_SIZE = 32
 )
 
 type World struct {
@@ -317,22 +320,22 @@ func (w *World) Destroy(entityId int64) {
 
 func (w *World) AddEntityToWorld(entity Entity) {
 
-	w.Log.LogInfo("Adding Entity to world: ")
-	w.Log.LogJson("world: ", w)
-	w.Log.LogJson("Components", entity.Components)
+	//w.Log.LogInfo("Adding Entity to world: ")
+	//w.Log.LogJson("world: ", w)
+	//w.Log.LogJson("Components", entity.Components)
 
 	for i := range entity.Components {
-		w.Log.LogInfo("Creating comp: ", i)
+		//w.Log.LogInfo("Creating comp: ", i)
 		entity.Components[i].CreateComponent()
 	}
 
-	w.Log.LogInfo("systems", len(w.Systems))
+	//w.Log.LogInfo("systems", len(w.Systems))
 
 	for i := range w.Systems {
 		system := *w.Systems[i]
-		w.Log.LogJson("checking system: ", system)
+		//w.Log.LogJson("checking system: ", system)
 		if w.DoesEntityHaveAllRequiredComponentTypes(&entity, system.RequiredComponentTypes()) {
-			w.Log.LogInfo("adding to system ", i)
+			//w.Log.LogInfo("adding to system ", i)
 			system.AddToStorage(&entity)
 		}
 	}
@@ -345,7 +348,7 @@ func (w *World) AddEntityToWorld(entity Entity) {
 		}
 	}
 
-	w.Log.LogInfo("added entity: ", entity.Id)
+	//w.Log.LogInfo("added entity: ", entity.Id)
 	w.Entities[entity.Id] = &entity
 }
 
@@ -578,4 +581,10 @@ func (w *World) Reset() {
 	w.IdIndex = 0
 	w.ToSpawn = []Entity{}
 	w.ToDestroy = []int64{}
+}
+
+func (w *World) ResetInput(id PlayerId) {
+	if input, ok := w.Input.Player[id]; ok {
+		input.InputFromBytes(0)
+	}
 }

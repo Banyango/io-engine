@@ -114,7 +114,6 @@ func (self *CanvasRenderSystem) UpdateSystem(delta float64, world *World) {
 			self.ctx.Set("fillStyle", color)
 		}
 
-		js.Global().Get("console").Call("log", position.Position.X(), " ", position.Position.Y())
 		self.ctx.Call("translate", X, Y)
 		self.ctx.Call("beginPath")
 		self.ctx.Call("arc", 0, 0, circle.Radius, 0, 2*math2.Pi)

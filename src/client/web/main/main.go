@@ -66,6 +66,7 @@ func MainLoopClient(self *ecs.World) {
 	var setTimeout js.Func
 
 	self.CurrentFrameTime = time.Now().UnixNano() / int64(time.Millisecond)
+	self.LastFrameTime = self.CurrentFrameTime
 	self.TimeElapsed = 0
 
 	defer func() {
@@ -76,17 +77,17 @@ func MainLoopClient(self *ecs.World) {
 
 	setTimeout = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		if !self.Paused {
-			self.LastFrameTime = self.CurrentFrameTime
 			self.CurrentFrameTime = time.Now().UnixNano() / int64(time.Millisecond)
 			delta := self.CurrentFrameTime - self.LastFrameTime
 			self.TimeElapsed = self.TimeElapsed + delta
 			for self.TimeElapsed >= self.Interval {
-				self.Update(0.016)
+				self.Update(ecs.FIXED_DELTA)
 				self.TimeElapsed = self.TimeElapsed - self.Interval
 			}
+			self.LastFrameTime = self.CurrentFrameTime
 		}
 
-		js.Global().Call("setTimeout", setTimeout, 0.016)
+		js.Global().Call("setTimeout", setTimeout, ecs.FIXED_DELTA)
 
 		return nil
 	})

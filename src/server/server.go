@@ -7,10 +7,10 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	. "github.com/Banyango/io-engine/src/ecs"
 	"github.com/Banyango/socker"
 	"github.com/gorilla/websocket"
-	"github.com/pion/webrtc"
-	. "github.com/Banyango/io-engine/src/ecs"
+	"github.com/pion/webrtc/v2"
 	"github.com/thoas/go-funk"
 	"net/http"
 	"sync"
@@ -22,7 +22,7 @@ const (
 
 type Server struct {
 	CurrentState WorldStatePacket
-	Buffered	 []*NetworkData
+	Buffered     []*NetworkData
 	mux          sync.Mutex
 	PlayerIndex  uint16
 	NetworkIndex uint16
@@ -37,6 +37,9 @@ func (self *Server) EntityWasSpawned(entity *Entity) {
 	networkData := self.SerializeEntity(entity)
 	networkData.NetworkId = component.NetworkId
 	networkData.OwnerId = component.OwnerId
+	networkData.PrefabId = uint16(component.PrefabId)
+
+	fmt.Println("network spawn {owner=", component.OwnerId, " networkId=", component.NetworkId, " prefab=", component.PrefabId, "}")
 
 	self.CurrentState.Created = append(self.CurrentState.Created, networkData)
 
@@ -47,7 +50,7 @@ func (self *Server) EntityWasDestroyed(entity int64) {
 	if id, found := self.FindNetworkId(entity); found {
 		indexToRemove := -1
 
-		for index ,val := range self.Buffered {
+		for index, val := range self.Buffered {
 			if val.NetworkId == id {
 				indexToRemove = index
 				break
@@ -139,27 +142,13 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 
 	clientConn.WSConnHandler = socker.NewClientConnection(conn)
 	clientConn.WSConnHandler.Connection.SetCloseHandler(func(code int, text string) error {
-		self.World.Mux.Lock()
-		defer self.World.Mux.Unlock()
-
-		for id, ent := range self.World.Entities {
-			if comp, ok := ent.Components[int(NetworkInstanceComponentType)]; ok {
-				if net, ok := comp.(*NetworkInstanceComponent); ok {
-					if net.OwnerId == clientConn.PlayerId {
-						self.World.ToDestroy = append(self.World.ToDestroy, id)
-					}
-				}
-			}
-		}
-
+		clientConn.Close(self.World)
 		self.RemoveClient(clientConn)
-		delete (self.World.Input.Player, clientConn.PlayerId)
-
 		return nil
 	})
-	clientConn.PlayerId = self.FetchAndIncrementPlayerId()
-
 	self.World.Mux.Lock()
+
+	clientConn.PlayerId = self.FetchAndIncrementPlayerId()
 	self.World.Input.Player[PlayerId(clientConn.PlayerId)] = NewInput()
 	self.World.Mux.Unlock()
 
@@ -174,7 +163,10 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 	clientConn.WSConnHandler.Add(func(message []byte) bool {
 		if clientConn.PeerConnection == nil {
 			fmt.Println("Setting up webrtc data channel -> player ", clientConn.PlayerId)
-			clientConn.ConnectToDataChannel(message)
+			clientConn.ConnectToDataChannel(message, func() {
+				clientConn.Close(self.World)
+				self.RemoveClient(clientConn)
+			})
 		}
 
 		fmt.Println("Handling messages -> player", clientConn.PlayerId, string(message))
@@ -184,7 +176,6 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 	})
 
 	clientConn.WSConnHandler.Add(func(message []byte) bool {
-		fmt.Println("event -> player", clientConn.PlayerId)
 		var handshake map[string]interface{}
 		err := json.Unmarshal(message, &handshake)
 
@@ -206,15 +197,19 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 					panic(err)
 				}
 
+				fmt.Println("spawn -> player ", clientConn.PlayerId)
+				self.mux.Lock()
+				defer self.mux.Unlock()
 				networkInstanceComponent := new(NetworkInstanceComponent)
-				networkInstanceComponent.OwnerId = PlayerId(clientConn.PlayerId)
+				networkInstanceComponent.OwnerId = clientConn.PlayerId
 				networkInstanceComponent.NetworkId = self.FetchAndIncrementNetworkId()
 				networkInstanceComponent.PrefabId = entity.PrefabId
 				entity.Components[int(NetworkInstanceComponentType)] = networkInstanceComponent
 
 				self.World.Mux.Lock()
+				defer self.World.Mux.Unlock()
 				self.World.Spawn(entity)
-				self.World.Mux.Unlock()
+
 			} else if val == "resync" {
 				fmt.Println("resync -> player ", clientConn.PlayerId)
 				clientConn.SendHandshakePacket(self.World.CurrentTick, self.Buffered)
@@ -257,7 +252,6 @@ func (self *Server) FetchAndIncrementNetworkId() uint16 {
 	return temp
 }
 
-
 func (self *Server) HandleIncomingData(delta float64) {
 	for _, client := range self.Clients {
 
@@ -269,11 +263,20 @@ func (self *Server) HandleIncomingData(delta float64) {
 			select {
 			case message, ok := <-client.UdpIn:
 				if ok {
-					tick := binary.LittleEndian.Uint64(message)
-					self.World.SetFutureInput(int64(tick), message[8], client.PlayerId)
+					if len(message) > 1 {
+						tick := int64(binary.LittleEndian.Uint64(message))
+
+						if tick < self.World.CurrentFrameTime {
+							self.World.ResetInput(client.PlayerId)
+						}
+
+						self.World.SetFutureInput(tick, message[8], client.PlayerId)
+					}
 				}
 			default:
 			}
+		} else {
+			self.World.ResetInput(client.PlayerId)
 		}
 	}
 }
@@ -309,6 +312,7 @@ func (self *Server) SendNetworkData(delta float64) {
 				}
 			}
 		}
+
 	}
 
 	if self.deltaCounter > SEND_TICK_RATE {
@@ -357,12 +361,14 @@ type ClientConnection struct {
 	Offer             webrtc.SessionDescription
 	AnswerSent        bool
 	IsDataChannelOpen bool
+	Resync         bool
 
 	SimulateFaster bool
 	Data           NetworkData
+
 }
 
-func (self *ClientConnection) ConnectToDataChannel(data []byte) {
+func (self *ClientConnection) ConnectToDataChannel(data []byte, onClose func()) {
 
 	self.UdpIn = make(chan []byte)
 
@@ -385,6 +391,11 @@ func (self *ClientConnection) ConnectToDataChannel(data []byte) {
 	// This will notify you when the peer has connected/disconnected
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
 		fmt.Printf("ICE Connection State has changed: %s\n", connectionState.String())
+		if connectionState == webrtc.ICEConnectionStateDisconnected {
+			self.IsDataChannelOpen = false
+		} else if connectionState == webrtc.ICEConnectionStateConnected {
+			self.IsDataChannelOpen = true
+		}
 	})
 
 	peerConnection.OnDataChannel(func(d *webrtc.DataChannel) {
@@ -402,7 +413,7 @@ func (self *ClientConnection) ConnectToDataChannel(data []byte) {
 		})
 
 		d.OnClose(func() {
-			self.Close()
+			fmt.Printf("Closing connection ->", self.PlayerId)
 		})
 	})
 
@@ -471,9 +482,9 @@ func (self *ClientConnection) HandleSignal(data []byte) {
 func (self *ClientConnection) SendHandshakePacket(tick int64, buffered []*NetworkData) {
 
 	networkPacket := ServerConnectionHandshakePacket{
-		PlayerId: self.PlayerId,
-		ServerTick:tick,
-		State:buffered,
+		PlayerId:   self.PlayerId,
+		ServerTick: tick,
+		State:      buffered,
 	}
 
 	var buf bytes.Buffer
@@ -488,8 +499,33 @@ func (self *ClientConnection) SendHandshakePacket(tick int64, buffered []*Networ
 
 }
 
-func (self *ClientConnection) Close() {
+func (self *ClientConnection) Close(world *World) {
+	world.Mux.Lock()
+	defer world.Mux.Unlock()
 
+	for id, ent := range world.Entities {
+		if comp, ok := ent.Components[int(NetworkInstanceComponentType)]; ok {
+			if net, ok := comp.(*NetworkInstanceComponent); ok {
+				if net.OwnerId == self.PlayerId {
+					world.ToDestroy = append(world.ToDestroy, id)
+				}
+			}
+		}
+	}
+	fmt.Println("Removing player ", self.PlayerId)
+	delete(world.Input.Player, self.PlayerId)
+
+	err := self.PeerConnection.Close()
+
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	err = self.DataChannel.Close()
+
+	if err != nil {
+		fmt.Println(err)
+	}
 }
 
 // Decode decodes the input from base64

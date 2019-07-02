@@ -98,18 +98,15 @@ func (self *NetworkedClientSystem) Init(w *World) {
 	// handle normal TCP packets.
 	self.ConnHandler.Add(func(message []byte) bool {
 
-		if self.WaitingToResync == true {
-			var packet server.ServerConnectionHandshakePacket
+		var packet server.ServerConnectionHandshakePacket
 
-			if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
-				log(fmt.Sprintln("Error in handshake packet!"))
-			}
-
-			w.Reset()
-			self.Client.HandleHandshake(packet, w)
-			self.WaitingToResync = false
-			w.Paused = false
+		if err := gob.NewDecoder(bytes.NewReader(message)).Decode(&packet); err != nil {
+			log(fmt.Sprintln("Error in handshake packet!"))
 		}
+
+		w.Reset()
+		self.Client.HandleHandshake(packet, w)
+		w.Paused = false
 
 		return false
 	})
@@ -250,7 +247,7 @@ func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
 		return
 	}
 
-	if self.IsDataChannelConnected() && !self.WaitingToResync {
+	if self.IsDataChannelConnected() {
 		if self.WorldStatePacket != nil && len(self.WorldStatePacket) > 0 {
 			for _, val := range self.WorldStatePacket {
 				self.Client.HandleWorldStatePacket(val, world, &self.NetworkInstance)
@@ -260,7 +257,11 @@ func (self *NetworkedClientSystem) UpdateSystem(delta float64, world *World) {
 
 		if world.Input != nil && world.Input.Player[0] != nil {
 			self.sendInputForCurrentFrame(world)
+		} else {
+			log("input nil")
 		}
+	} else {
+		log("disconected data channel")
 	}
 }
 
@@ -327,25 +328,34 @@ func (self *NetworkedClientSystem) IsDataChannelConnected() bool {
 }
 
 func (self *NetworkedClientSystem) SetupFocusReconnector(world *World) {
-	var onFocus js.Func
+	//var onFocus js.Func
 	//var onBlur  js.Func
 
-	onFocus = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		enc := js.Global().Get("TextEncoder").New()
-
-		result := enc.Call("encode", "{\"event\":\"resync\"}")
-
-		self.ws.Call("send", result)
-
-		self.WaitingToResync = true
-
-		return nil
-	})
+	//onFocus = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+	//
+	//	self.Reset()
+	//
+	//	return nil
+	//})
 
 	//onBlur = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 	//	return nil
 	//})
 
-	js.Global().Get("window").Set("onfocus", onFocus)
+	//js.Global().Get("window").Set("onfocus", onFocus)
 	//js.Global().Get("window").Set("onblur", onBlur)
+}
+
+func (self *NetworkedClientSystem) Reset() {
+	enc := js.Global().Get("TextEncoder").New()
+	result := enc.Call("encode", "{\"event\":\"resync\"}")
+	self.ws.Call("send", result)
+	self.WaitingToResync = true
+}
+
+func (self *NetworkedClientSystem) SendHeartBeat() {
+	byteArray := make([]byte, 1)
+	jsBuf := js.TypedArrayOf(byteArray)
+	self.WebRTCConnection.Get("sendChannel").Call("send", jsBuf)
+	jsBuf.Release()
 }
