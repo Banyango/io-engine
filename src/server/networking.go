@@ -10,16 +10,11 @@ Network Shared structs
 ----------------------------------------------------------------------------------------------------------------
 */
 
-// this connection must be a goroutine use a goroutine instead of component thing
-type ClientInputPacket struct {
-	PlayerId uint16
-	Input    byte
-}
-
-type ServerConnectionHandshakePacket struct {
-	PlayerId   PlayerId
-	ServerTick int64
-	State	[]*NetworkData
+type RoundTripTime struct {
+	PlayerId       PlayerId
+	RecTime        int64
+	SentTimeClient int64
+	SentTimeServer int64
 }
 
 // Serialized Bytes of the entity and components.
@@ -30,16 +25,22 @@ type NetworkData struct {
 	Data      map[int][]byte
 }
 
-type WorldStatePacket struct {
+type ClientWorldStatePacket struct {
+	State []byte // gob serialized WorldState struct
+	RTT   *RoundTripTime
+}
+
+type WorldState struct {
 	Tick      int64
 	Destroyed []int
 	Created   []*NetworkData
 	Updates   []*NetworkData
 }
 
-type ServerResyncHandshake struct {
-	Tick      int64
-	State   []*NetworkData
+type ClientPacket struct {
+	Tick  int64
+	Time  int64
+	Input byte
 }
 
 type ReadSyncUDP interface {
@@ -66,7 +67,7 @@ Network Instance Component
 type NetworkInstanceComponent struct {
 	OwnerId   PlayerId
 	NetworkId uint16
-	PrefabId int
+	PrefabId  int
 }
 
 func (*NetworkInstanceComponent) Id() int {
@@ -89,7 +90,6 @@ func (self *NetworkInstanceComponent) Clone() Component {
 	return component
 }
 
-
 func (self *NetworkInstanceComponent) Reset(component Component) {
 
 }
@@ -104,7 +104,7 @@ NetworkInstanceDataCollectionSystem
 
 type NetworkInstanceDataCollectionSystem struct {
 	NetworkInstances Storage
-	Server *Server
+	Server           *Server
 }
 
 func NewNetworkInstanceDataCollectionSystem(server *Server) *NetworkInstanceDataCollectionSystem {
@@ -147,10 +147,10 @@ func (self *NetworkInstanceDataCollectionSystem) UpdateSystem(delta float64, wor
 		entity := world.Entities[entity]
 
 		data := NetworkData{
-			OwnerId: instance.OwnerId,
+			OwnerId:   instance.OwnerId,
 			NetworkId: instance.NetworkId,
-			PrefabId:uint16(entity.PrefabId),
-			Data: map[int][]byte{},
+			PrefabId:  uint16(entity.PrefabId),
+			Data:      map[int][]byte{},
 		}
 
 		for _, val := range entity.Components {
@@ -172,7 +172,6 @@ NetworkInputFutureCollectionSystem
 */
 
 type NetworkInputFutureCollectionSystem struct {
-
 }
 
 func (self *NetworkInputFutureCollectionSystem) RemoveFromStorage(entity *Entity) {

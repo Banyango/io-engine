@@ -136,7 +136,7 @@ Globals  - Are static components like input that dont really belong
 */
 
 const (
-	MAX_CACHE_SIZE = 200
+	MAX_CACHE_SIZE = 32
 )
 
 var (
@@ -166,6 +166,8 @@ type World struct {
 	LastFrameTime    int64
 	CurrentFrameTime int64
 	CurrentTick      int64
+	Ping             float64
+	BytesRec		 int
 	LastServerTick   int64
 
 	Interval   int64
@@ -579,6 +581,8 @@ func (w *World) Reset() {
 	w.CurrentTick = 0
 	w.LastServerTick = 0
 	w.IdIndex = 0
+	w.Ping = 0
+	w.LastServerTick = 0
 	w.ToSpawn = []Entity{}
 	w.ToDestroy = []int64{}
 }

@@ -15,7 +15,7 @@ func TestClient_HandleWorldStatePacketNulls(t *testing.T) {
 
 	client := Client{PlayerId: 0}
 	world := ecs.NewWorld()
-	packet := server.WorldStatePacket{}
+	packet := server.WorldState{}
 
 	client.HandleWorldStatePacket(&packet, world, nil)
 
@@ -113,7 +113,7 @@ func TestRunClient(t *testing.T) {
 	component := game.PositionComponent{Position: math.NewVectorInt(2, 2)}
 	component.WriteUDP(&data)
 
-	packet := server.WorldStatePacket{}
+	packet := server.WorldState{}
 	packet.Created = append(packet.Created, &data)
 
 	client.HandleWorldStatePacket(&packet, world, storage)
@@ -144,7 +144,7 @@ func TestRunClientUpdateAndCreate(t *testing.T) {
 	component2 := game.PositionComponent{Position: math.NewVectorInt(5, 5)}
 	component2.WriteUDP(&data2)
 
-	packet := server.WorldStatePacket{}
+	packet := server.WorldState{}
 	packet.Created = append(packet.Created, &data)
 	packet.Updates = append(packet.Updates, &data2)
 
@@ -168,7 +168,7 @@ func TestRunClientUpdateBeforeCreate(t *testing.T) {
 	component2 := game.PositionComponent{Position: math.NewVectorInt(5, 5)}
 	component2.WriteUDP(&data2)
 
-	packet := server.WorldStatePacket{}
+	packet := server.WorldState{}
 	packet.Updates = append(packet.Updates, &data2)
 
 	client.HandleWorldStatePacket(&packet, world, storage)
@@ -195,7 +195,7 @@ func TestRunClientUpdateAndCreateWithCache(t *testing.T) {
 	component2 := game.PositionComponent{Position: math.NewVectorInt(5, 5)}
 	component2.WriteUDP(&data2)
 
-	packet := server.WorldStatePacket{}
+	packet := server.WorldState{}
 	packet.Created = append(packet.Created, &data)
 	packet.Updates = append(packet.Updates, &data2)
 
@@ -225,7 +225,7 @@ func TestRunClientUpdateAndCreateWithCacheAndInput(t *testing.T) {
 	component := game.PositionComponent{Position: math.NewVectorInt(0, 0)}
 	component.WriteUDP(&data)
 
-	packet := server.WorldStatePacket{Tick: 0}
+	packet := server.WorldState{Tick: 0}
 	packet.Created = append(packet.Created, &data)
 
 	world.Update(0.016)
@@ -253,7 +253,7 @@ func TestRunClientUpdateAndCreateWithCacheAndInput(t *testing.T) {
 	component2 := game.PositionComponent{Position: math.NewVectorInt(-3, -3)}
 	component2.WriteUDP(&data2)
 
-	packet2 := server.WorldStatePacket{Tick: 1}
+	packet2 := server.WorldState{Tick: 1}
 	packet2.Updates = append(packet.Updates, &data2)
 
 	client.HandleWorldStatePacket(&packet2, world, storage)
@@ -268,7 +268,7 @@ func TestRunClientFromRealTest(t *testing.T) {
 
 	world, client, storage := createWorld()
 
-	packet := server.WorldStatePacket{Tick: 1244}
+	packet := server.WorldState{Tick: 1244}
 
 	world.SetToTick(1165)
 
@@ -293,7 +293,7 @@ func TestRunClientFromRealTestBothCreateAndUpdate(t *testing.T) {
 
 	world, client, storage := createWorld()
 
-	packet := server.WorldStatePacket{Tick: 1244}
+	packet := server.WorldState{Tick: 1244}
 
 	world.SetToTick(1165)
 
@@ -342,7 +342,7 @@ func TestRunClientFromRealTestMoreComplete(t *testing.T) {
 	worldServer.AddEntityToWorld(entity)
 	worldServer.Input.Player[0] = ecs.NewInput()
 
-	handlerClient.HandleHandshake(server.ServerConnectionHandshakePacket{PlayerId:0, ServerTick:worldServer.CurrentTick}, worldClient)
+	handlerClient.HandleHandshake(server.ServerConnectionHandshakePacket{PlayerId:0, RountTripClientTime:worldServer.CurrentTick}, worldClient)
 
 	for i := 0; i < 3; i++ {
 		worldServer.Update(0.016)
@@ -359,7 +359,7 @@ func TestRunClientFromRealTestMoreComplete(t *testing.T) {
 	component2 := game.PositionComponent{Position: math.NewVectorInt(5, 5)}
 	component2.WriteUDP(&data2)
 
-	packet := server.WorldStatePacket{}
+	packet := server.WorldState{}
 	packet.Created = append(packet.Created, &data)
 	packet.Updates = append(packet.Updates, &data2)
 

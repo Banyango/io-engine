@@ -206,9 +206,12 @@ func (self *DebugSystem) EntitiesContains(entity *ecs.Entity) bool {
 func (self *DebugSystem) UpdateWorldInfo(world *ecs.World) {
 	info := map[string]interface{}{
 		"type":"UPDATE_WORLD_INFO",
-		"payload":map[string]int64 {
+		"payload":map[string]interface{} {
 			"currentTick":world.CurrentTick,
 			"lastServerTick":world.LastServerTick,
+			"ping":world.Ping,
+			"bytesRec":world.BytesRec,
+			"rttTicks":world.Ping/ecs.FIXED_DELTA,
 		},
 	}
 	marshal, _ := json.Marshal(info)

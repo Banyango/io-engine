@@ -16,10 +16,7 @@ class WebRTCConnection {
         console.log("[[js]: peer connection init]");
 
         this.sendChannel = this.pc.createDataChannel('foo' + this.uuid4(), {
-            ordered:false,
-            protocol:"udp",
-            maxRetransmits:5,
-            priority:"high",
+            ordered:true,
         });
         this.sendChannel.binaryType = 'arraybuffer';
 

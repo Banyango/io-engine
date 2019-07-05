@@ -6,6 +6,7 @@ compile-wasm:
 
 copy-web-template:
 	@ cp -a ./src/client/web/main/template/. ./dist/app/main/
+	@ cp ./game.json ./dist/
 
 clean:
 	@ rm -dr dist || true
@@ -17,7 +18,6 @@ create-dist:
 run-server: clean create-dist compile-wasm copy-web-template
 	$(info Running Server on Port :8081)
 	@ go build -o ./dist/server ./src/server/main
-	@ cp ./game.json ./dist/
 	@ (cd ./dist; ./server)
 
 build: clean create-dist compile-wasm copy-web-template
@@ -31,3 +31,8 @@ gotest:
 
 govet:
 	@ go vet ./src/client ./src/ecs ./src/server ./src/game ./src/math
+
+docker-upload:
+	@ docker login repo.treescale.com
+	@ docker build -t repo.treescale.com/banyango/io-engine:latest .
+	@ docker push repo.treescale.com/banyango/io-engine:latest

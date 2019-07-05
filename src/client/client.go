@@ -5,23 +5,25 @@ import (
 	"github.com/Banyango/io-engine/src/ecs"
 	"github.com/Banyango/io-engine/src/server"
 	"github.com/thoas/go-funk"
+	"math"
 	"syscall/js"
+	"time"
 )
 
 const CLIENT_TICK_LEAD = 3
 
 type Client struct {
-	PlayerId  ecs.PlayerId
-	StartTick int64
+	PlayerId ecs.PlayerId
+	Ping     float64
 }
 
-func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, world *ecs.World, networkInstances *ecs.Storage) {
+func (self *Client) HandleWorldStatePacket(packet *server.WorldState, world *ecs.World, networkInstances *ecs.Storage) {
 
 	if packet == nil {
 		return
 	}
 
-	if packet.Tick > world.CurrentTick {
+	if packet.Tick > world.CurrentTick{
 		self.HandleResync(packet, world)
 	}
 
@@ -91,8 +93,6 @@ func (self *Client) HandleWorldStatePacket(packet *server.WorldStatePacket, worl
 
 			world.Resimulate(packet.Tick)
 		}
-	} else {
-
 	}
 }
 
@@ -121,17 +121,17 @@ func logJson(s string, obj interface{}) {
 	log(s, string(marshal))
 }
 
-func (self *Client) destroyEntities(packet *server.WorldStatePacket, world *ecs.World, storage *ecs.Storage) {
+func (self *Client) destroyEntities(packet *server.WorldState, world *ecs.World, storage *ecs.Storage) {
 	for _, destroyed := range packet.Destroyed {
 		id := self.findEntityIdInStorageForNetworkId(storage, uint16(destroyed))
-		log("removing entity:",id)
+		log("removing entity:", id)
 		if id != -1 {
 			world.RemoveEntity(id)
 		}
 	}
 }
 
-func (self *Client) createEntities(packet *server.WorldStatePacket, world *ecs.World) {
+func (self *Client) createEntities(packet *server.WorldState, world *ecs.World) {
 	for i := range packet.Created {
 		created := packet.Created[i]
 		self.createEntity(created, world)
@@ -149,20 +149,38 @@ func (self *Client) createEntity(data *server.NetworkData, world *ecs.World) {
 	world.AddEntityToWorld(entity)
 }
 
-func (self *Client) HandleHandshake(packet server.ServerConnectionHandshakePacket, world *ecs.World) {
-	self.PlayerId = packet.PlayerId
-	startTick := packet.ServerTick + CLIENT_TICK_LEAD
-	self.StartTick = startTick
-	world.SetToTick(startTick)
-	//
-	//for _, state := range packet.State {
-	//	self.createEntity(state, world)
-	//}
+func (self *Client) HandleResync(packet *server.WorldState, world *ecs.World) {
+
+	if packet.Tick - world.CurrentTick > ecs.MAX_CACHE_SIZE {
+
+		newTick := packet.Tick + int64(math.Round(world.Ping / ecs.FIXED_DELTA)) + CLIENT_TICK_LEAD
+
+		world.Reset()
+		world.SetToTick(newTick)
+
+
+	} else {
+		newTick := packet.Tick + int64(math.Round(world.Ping / ecs.FIXED_DELTA)) + CLIENT_TICK_LEAD
+
+		world.IsResimulating = true
+		for i := world.CurrentTick; i <= world.CurrentTick + newTick; i++ {
+			world.Update(ecs.FIXED_DELTA)
+		}
+		world.IsResimulating = false
+		world.SetToTick(newTick)
+	}
+
 }
 
-func (self *Client) HandleResync(packet *server.WorldStatePacket, world *ecs.World) {
-	world.Reset()
-	world.SetToTick(packet.Tick + CLIENT_TICK_LEAD)
+func (self *Client) HandleRTT(rtt *server.RoundTripTime) {
+	if rtt != nil && rtt.SentTimeServer != 0 {
+		self.PlayerId = rtt.PlayerId
+
+		sentTime := time.Unix(0, rtt.RecTime).Sub(time.Unix(0, rtt.SentTimeClient))
+		recTime := time.Now().Sub(time.Unix(0, rtt.SentTimeServer))
+
+		self.Ping = sentTime.Seconds() + recTime.Seconds()
+	}
 }
 
 func log(str ...interface{}) {

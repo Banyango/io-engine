@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 	"github.com/thoas/go-funk"
 	"net/http"
 	"sync"
+	"time"
 )
 
 const (
@@ -21,7 +21,7 @@ const (
 )
 
 type Server struct {
-	CurrentState WorldStatePacket
+	CurrentState WorldState
 	Buffered     []*NetworkData
 	mux          sync.Mutex
 	PlayerIndex  uint16
@@ -150,19 +150,14 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 
 	clientConn.PlayerId = self.FetchAndIncrementPlayerId()
 	self.World.Input.Player[PlayerId(clientConn.PlayerId)] = NewInput()
+	clientConn.HasNotRecInputPacketYet = true
 	self.World.Mux.Unlock()
 
 	fmt.Println("Client Given playerId: ", clientConn.PlayerId)
 
 	clientConn.WSConnHandler.Add(func(message []byte) bool {
-		fmt.Println("Sending Buffered Entities to -> player ", clientConn.PlayerId)
-		clientConn.SendHandshakePacket(self.World.CurrentTick, self.Buffered)
-		return true
-	})
-
-	clientConn.WSConnHandler.Add(func(message []byte) bool {
 		if clientConn.PeerConnection == nil {
-			fmt.Println("Setting up webrtc data channel -> player ", clientConn.PlayerId)
+			fmt.Println("Setting up webrtc data channel -> player", clientConn.PlayerId)
 			clientConn.ConnectToDataChannel(message, func() {
 				clientConn.Close(self.World)
 				self.RemoveClient(clientConn)
@@ -210,10 +205,11 @@ func (self *Server) createClientConnection(conn *websocket.Conn) {
 				defer self.World.Mux.Unlock()
 				self.World.Spawn(entity)
 
-			} else if val == "resync" {
-				fmt.Println("resync -> player ", clientConn.PlayerId)
-				clientConn.SendHandshakePacket(self.World.CurrentTick, self.Buffered)
 			}
+			//else if val == "resync" {
+			//	fmt.Println("resync -> player ", clientConn.PlayerId)
+			//	clientConn.SendHandshakePacket(self.World.CurrentTick, self.Buffered)
+			//}
 		}
 
 		return false
@@ -264,13 +260,34 @@ func (self *Server) HandleIncomingData(delta float64) {
 			case message, ok := <-client.UdpIn:
 				if ok {
 					if len(message) > 1 {
-						tick := int64(binary.LittleEndian.Uint64(message))
 
-						if tick < self.World.CurrentFrameTime {
+						var input ClientPacket
+						err := gob.NewDecoder(bytes.NewBuffer(message)).Decode(&input)
+
+						if err != nil {
+							fmt.Println("errror decoding input packet for player ", client.PlayerId, err)
+						}
+
+						if input.Tick < self.World.CurrentTick {
+							//fmt.Println("tick before current frame ", input.Tick, self.World.CurrentTick)
 							self.World.ResetInput(client.PlayerId)
 						}
 
-						self.World.SetFutureInput(tick, message[8], client.PlayerId)
+						if input.Tick % 3 == 0 || client.HasNotRecInputPacketYet {
+
+							if client.HasNotRecInputPacketYet {
+								client.HasNotRecInputPacketYet = false
+							}
+
+							client.PlayerId = client.PlayerId
+							client.RoundTripTime = new(RoundTripTime)
+							client.RoundTripTimeTickToSendOn = input.Tick
+							client.RoundTripTime.SentTimeClient = input.Time
+							client.RoundTripTime.RecTime = time.Now().UnixNano()
+
+						}
+
+						self.World.SetFutureInput(input.Tick, message[8], client.PlayerId)
 					}
 				}
 			default:
@@ -290,7 +307,7 @@ func (self *Server) SendNetworkData(delta float64) {
 		return
 	}
 
-	var udpBytesToWrite []byte
+	var worldStateBytes []byte
 	var gameStateBuffer bytes.Buffer
 	enc := gob.NewEncoder(&gameStateBuffer)
 
@@ -300,13 +317,30 @@ func (self *Server) SendNetworkData(delta float64) {
 		fmt.Printf("Encoding Failed")
 		return
 	}
-	udpBytesToWrite = gameStateBuffer.Bytes()
+
+	worldStateBytes = gameStateBuffer.Bytes()
 
 	for _, client := range self.Clients {
 		// only send data changes if the webrtc connection is open.
 		if client.IsDataChannelOpen {
-			if client.DataChannel != nil && len(udpBytesToWrite) > 0 {
-				err := client.DataChannel.Send(udpBytesToWrite)
+			if client.DataChannel != nil && len(worldStateBytes) > 0 {
+
+				var clientStateBuffer bytes.Buffer
+				enc := gob.NewEncoder(&clientStateBuffer)
+
+				if client.RoundTripTime != nil {
+					client.RoundTripTime.SentTimeServer = time.Now().UnixNano()
+				}
+
+				if err := enc.Encode(ClientWorldStatePacket{
+					RTT:   client.RoundTripTime,
+					State: worldStateBytes,
+				}); err != nil {
+					fmt.Printf("Encoding Failed")
+					continue
+				}
+
+				err := client.DataChannel.Send(clientStateBuffer.Bytes())
 				if err != nil {
 					fmt.Println("Error Writing to data channel player:", client.PlayerId)
 				}
@@ -356,16 +390,18 @@ type ClientConnection struct {
 	UdpIn chan []byte
 
 	// Udp - unreliable
-	PeerConnection    *webrtc.PeerConnection
-	DataChannel       *webrtc.DataChannel
-	Offer             webrtc.SessionDescription
-	AnswerSent        bool
-	IsDataChannelOpen bool
-	Resync         bool
+	PeerConnection            *webrtc.PeerConnection
+	DataChannel               *webrtc.DataChannel
+	Offer                     webrtc.SessionDescription
+	AnswerSent                bool
+	IsDataChannelOpen         bool
+	Resync                    bool
+	RoundTripTimeTickToSendOn int64
+	RoundTripTime             *RoundTripTime
 
-	SimulateFaster bool
-	Data           NetworkData
-
+	SimulateFaster          bool
+	Data                    NetworkData
+	HasNotRecInputPacketYet bool
 }
 
 func (self *ClientConnection) ConnectToDataChannel(data []byte, onClose func()) {
@@ -477,26 +513,6 @@ func (self *ClientConnection) HandleSignal(data []byte) {
 			panic(err)
 		}
 	}
-}
-
-func (self *ClientConnection) SendHandshakePacket(tick int64, buffered []*NetworkData) {
-
-	networkPacket := ServerConnectionHandshakePacket{
-		PlayerId:   self.PlayerId,
-		ServerTick: tick,
-		State:      buffered,
-	}
-
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-
-	if err := enc.Encode(networkPacket); err != nil {
-		fmt.Printf("Encoding Failed")
-		return
-	}
-
-	self.WSConnHandler.Write(buf.Bytes())
-
 }
 
 func (self *ClientConnection) Close(world *World) {
